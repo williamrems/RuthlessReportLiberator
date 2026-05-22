@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
+import urllib.parse
 from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V3")
-st.markdown("Find the dashboards and snapshots holding your reports hostage, neutralize the dependencies, and purge your org.")
+st.title("🧨 The Ruthless Report Liberator V4")
+st.markdown("X-Ray the org for Dashboards, Snapshots, FlexiPages, and Layouts holding your reports hostage.")
 
 # --- SIDEBAR: AUTHENTICATION ---
 with st.sidebar:
@@ -42,7 +43,7 @@ if 'sf' in st.session_state:
         execute_hunt = st.button("Hunt Dependencies", type="primary", use_container_width=True)
 
     if execute_hunt and search_term:
-        with st.spinner("Scanning for Dashboards and Reporting Snapshots..."):
+        with st.spinner("Executing Deep Metadata Scan..."):
             # 1. Fetch the Reports
             is_id = search_term.startswith('00O') and len(search_term) in [15, 18]
             
@@ -67,6 +68,8 @@ if 'sf' in st.session_state:
                 
                 for rep in reports:
                     rep_id = rep['Id']
+                    # The Tooling API needs the 15-character ID for dependency tracking
+                    rep_id_15 = rep_id[:15] 
                     rep_name = rep['Name']
                     owner_id = rep.get('OwnerId', '')
                     rep_link = f"https://{base_url}/lightning/r/Report/{rep_id}/view"
@@ -91,16 +94,26 @@ if 'sf' in st.session_state:
                         snaps = sf.query(snap_query).get('records', [])
                     except Exception as e:
                         pass
+                        
+                    # HUNT 3: Tooling API (FlexiPages & Layouts)
+                    tooling_deps = []
+                    try:
+                        tooling_query = f"SELECT MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency WHERE RefMetadataComponentId = '{rep_id_15}'"
+                        encoded_query = urllib.parse.quote(tooling_query)
+                        tooling_res = sf.toolingexecute(f"query/?q={encoded_query}")
+                        tooling_deps = tooling_res.get('records', [])
+                    except Exception as e:
+                        pass
 
                     # Compile Results
-                    if not dash_comps and not snaps:
+                    if not dash_comps and not snaps and not tooling_deps:
                         all_results.append({
                             "Report Name": rep_name,
                             "Report Action": rep_link,
                             "Folder Link": folder_link,
-                            "Status": "🟢 CLEAN (No Direct Links)",
+                            "Status": "🟢 COMPLETELY CLEAN",
                             "Hostage Location": "None",
-                            "Action Link": None, # Fixed UI Bug here
+                            "Action Link": None,
                             "Dependency Type": "N/A"
                         })
                     
@@ -124,8 +137,29 @@ if 'sf' in st.session_state:
                             "Folder Link": folder_link,
                             "Status": "🔴 HOSTAGE: SNAPSHOT",
                             "Hostage Location": snap.get('Name'),
-                            "Action Link": f"https://{base_url}/lightning/setup/AnalyticSnapshots/page?address=%2F{snap.get('Id')}",
+                            "Action Link": f"https://{base_url}/lightning/setup/AnalyticSnapshots/home",
                             "Dependency Type": "Reporting Snapshot"
+                        })
+                        
+                    for dep in tooling_deps:
+                        comp_type = dep.get('MetadataComponentType', 'Unknown')
+                        comp_name = dep.get('MetadataComponentName', 'Unknown')
+                        
+                        # Route the Action Link based on the Metadata Type
+                        setup_link = None
+                        if comp_type == 'FlexiPage':
+                            setup_link = f"https://{base_url}/lightning/setup/FlexiPage/home"
+                        elif comp_type == 'Layout':
+                            setup_link = f"https://{base_url}/lightning/setup/ObjectManager/home"
+                            
+                        all_results.append({
+                            "Report Name": rep_name,
+                            "Report Action": rep_link,
+                            "Folder Link": folder_link,
+                            "Status": f"🔴 HOSTAGE: {comp_type.upper()}",
+                            "Hostage Location": comp_name,
+                            "Action Link": setup_link,
+                            "Dependency Type": comp_type
                         })
                 
                 # Render Battleplan
@@ -133,7 +167,7 @@ if 'sf' in st.session_state:
                     st.markdown("### 📋 Dependency Battleplan")
                     df_results = pd.DataFrame(all_results)
                     
-                    clean_count = len(df_results[df_results['Status'] == '🟢 CLEAN (No Direct Links)'])
+                    clean_count = len(df_results[df_results['Status'] == '🟢 COMPLETELY CLEAN'])
                     hostage_count = len(df_results) - clean_count
                     
                     m1, m2 = st.columns(2)
@@ -157,7 +191,7 @@ if 'sf' in st.session_state:
                         column_config=col_config
                     )
                     
-                    st.info("**Ruthless Tip:** If the status is CLEAN but Salesforce still blocks deletion, the report is either embedded on a Lightning Page (Home/Account page) via a 'Report Chart' component, or there is a ghost reference in your Recycle Bin. Go empty the org's Recycle Bin manually to force a garbage collection cleanup.")
+                    st.info("**Ruthless Tip:** If a FlexiPage is listed, click 'Investigate Hostage' to go to the Lightning App Builder, find that page name, edit it, and remove the Report Chart component.")
 
     # --- THE EXECUTIONER'S BLOCK ---
     st.markdown("---")
