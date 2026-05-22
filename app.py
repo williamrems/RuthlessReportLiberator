@@ -68,102 +68,102 @@ if 'sf' in st.session_state:
                     st.error(f"Failed to query Reports: {e}")
                     reports = []
 
-                if not reports:
-                    st.warning("No reports found matching that criteria.")
-                else:
-                    st.success(f"Found {len(reports)} Report(s). Initiating deep scan...")
+            if not reports:
+                st.warning("No reports found matching that criteria.")
+            else:
+                st.success(f"Found {len(reports)} Report(s). Initiating deep scan...")
+                
+                all_results = []
+                
+                for rep in reports:
+                    rep_id = rep['Id']
+                    rep_id_15 = rep_id[:15] 
+                    rep_name = rep['Name']
+                    owner_id = rep.get('OwnerId', '')
+                    rep_link = f"https://{base_url}/lightning/r/Report/{rep_id}/view"
                     
-                    all_results = []
+                    if owner_id.startswith('005'):
+                        folder_link = "Private User Folder"
+                    else:
+                        folder_link = f"https://{base_url}/lightning/r/Folder/{owner_id}/view"
                     
-                    for rep in reports:
-                        rep_id = rep['Id']
-                        rep_id_15 = rep_id[:15] 
-                        rep_name = rep['Name']
-                        owner_id = rep.get('OwnerId', '')
-                        rep_link = f"https://{base_url}/lightning/r/Report/{rep_id}/view"
+                    # HUNT 1: Dashboards
+                    dash_query = f"SELECT Id, DashboardId, Dashboard.Title FROM DashboardComponent WHERE CustomReportId = '{rep_id}'"
+                    dash_comps = []
+                    try:
+                        dash_comps = sf.query_all(dash_query).get('records', [])
+                    except Exception: pass
+                    
+                    # HUNT 2: Analytic Snapshots
+                    snap_query = f"SELECT Id, Name FROM AnalyticSnapshot WHERE ReportId = '{rep_id}'"
+                    snaps = []
+                    try:
+                        snaps = sf.query(snap_query).get('records', [])
+                    except Exception: pass
                         
-                        if owner_id.startswith('005'):
-                            folder_link = "Private User Folder"
-                        else:
-                            folder_link = f"https://{base_url}/lightning/r/Folder/{owner_id}/view"
-                        
-                        # HUNT 1: Dashboards
-                        dash_query = f"SELECT Id, DashboardId, Dashboard.Title FROM DashboardComponent WHERE CustomReportId = '{rep_id}'"
-                        dash_comps = []
-                        try:
-                            dash_comps = sf.query_all(dash_query).get('records', [])
-                        except Exception: pass
-                        
-                        # HUNT 2: Analytic Snapshots
-                        snap_query = f"SELECT Id, Name FROM AnalyticSnapshot WHERE ReportId = '{rep_id}'"
-                        snaps = []
-                        try:
-                            snaps = sf.query(snap_query).get('records', [])
-                        except Exception: pass
-                            
-                        # HUNT 3: Tooling API
-                        tooling_deps = []
-                        try:
-                            tooling_query = f"SELECT MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency WHERE RefMetadataComponentId = '{rep_id_15}'"
-                            encoded_query = urllib.parse.quote(tooling_query)
-                            tooling_res = sf.toolingexecute(f"query/?q={encoded_query}")
-                            tooling_deps = tooling_res.get('records', [])
-                        except Exception: pass
+                    # HUNT 3: Tooling API
+                    tooling_deps = []
+                    try:
+                        tooling_query = f"SELECT MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency WHERE RefMetadataComponentId = '{rep_id_15}'"
+                        encoded_query = urllib.parse.quote(tooling_query)
+                        tooling_res = sf.toolingexecute(f"query/?q={encoded_query}")
+                        tooling_deps = tooling_res.get('records', [])
+                    except Exception: pass
 
-                        # Compile Results
-                        if not dash_comps and not snaps and not tooling_deps:
-                            all_results.append({
-                                "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
-                                "Status": "🟢 COMPLETELY CLEAN", "Hostage Location": "None", "Action Link": None, "Dependency Type": "N/A"
-                            })
-                        
-                        for comp in dash_comps:
-                            dash_id = comp.get('DashboardId')
-                            dash_title = comp.get('Dashboard', {}).get('Title', 'Unknown (Likely Deleted)')
-                            all_results.append({
-                                "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
-                                "Status": "🔴 HOSTAGE: DASHBOARD", "Hostage Location": dash_title, 
-                                "Action Link": f"https://{base_url}/lightning/r/Dashboard/{dash_id}/view", "Dependency Type": "DashboardComponent"
-                            })
-                            
-                        for snap in snaps:
-                            all_results.append({
-                                "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
-                                "Status": "🔴 HOSTAGE: SNAPSHOT", "Hostage Location": snap.get('Name'),
-                                "Action Link": f"https://{base_url}/lightning/setup/AnalyticSnapshots/home", "Dependency Type": "Reporting Snapshot"
-                            })
-                            
-                        for dep in tooling_deps:
-                            comp_type = dep.get('MetadataComponentType', 'Unknown')
-                            comp_name = dep.get('MetadataComponentName', 'Unknown')
-                            setup_link = f"https://{base_url}/lightning/setup/FlexiPage/home" if comp_type == 'FlexiPage' else f"https://{base_url}/lightning/setup/ObjectManager/home" if comp_type == 'Layout' else None
-                                
-                            all_results.append({
-                                "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
-                                "Status": f"🔴 HOSTAGE: {comp_type.upper()}", "Hostage Location": comp_name,
-                                "Action Link": setup_link, "Dependency Type": comp_type
-                            })
+                    # Compile Results
+                    if not dash_comps and not snaps and not tooling_deps:
+                        all_results.append({
+                            "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
+                            "Status": "🟢 COMPLETELY CLEAN", "Hostage Location": "None", "Action Link": None, "Dependency Type": "N/A"
+                        })
                     
-                    if all_results:
-                        st.markdown("### 📋 Dependency Battleplan")
-                        df_results = pd.DataFrame(all_results)
+                    for comp in dash_comps:
+                        dash_id = comp.get('DashboardId')
+                        dash_title = comp.get('Dashboard', {}).get('Title', 'Unknown (Likely Deleted)')
+                        all_results.append({
+                            "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
+                            "Status": "🔴 HOSTAGE: DASHBOARD", "Hostage Location": dash_title, 
+                            "Action Link": f"https://{base_url}/lightning/r/Dashboard/{dash_id}/view", "Dependency Type": "DashboardComponent"
+                        })
                         
-                        clean_count = len(df_results[df_results['Status'] == '🟢 COMPLETELY CLEAN'])
+                    for snap in snaps:
+                        all_results.append({
+                            "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
+                            "Status": "🔴 HOSTAGE: SNAPSHOT", "Hostage Location": snap.get('Name'),
+                            "Action Link": f"https://{base_url}/lightning/setup/AnalyticSnapshots/home", "Dependency Type": "Reporting Snapshot"
+                        })
                         
-                        m1, m2 = st.columns(2)
-                        m1.metric("Reports Clean of Direct Links", clean_count)
-                        m2.metric("Dependencies Found", len(df_results) - clean_count)
-                        st.markdown("---")
-                        
-                        col_config = {
-                            "Report Action": st.column_config.LinkColumn("Report Link", display_text="Open Report ↗"),
-                            "Action Link": st.column_config.LinkColumn("Action Link", display_text="Investigate Hostage ↗")
-                        }
-                        if not any(df_results['Folder Link'] == 'Private User Folder'):
-                            col_config["Folder Link"] = st.column_config.LinkColumn("Folder Link", display_text="Open Folder Settings ↗")
-                        
-                        st.dataframe(df_results, use_container_width=True, hide_index=True, column_config=col_config)
-                        st.info("**Ruthless Tip:** If a FlexiPage is listed, click 'Investigate Hostage' to go to the Lightning App Builder, find that page name, edit it, and remove the Report Chart component.")
+                    for dep in tooling_deps:
+                        comp_type = dep.get('MetadataComponentType', 'Unknown')
+                        comp_name = dep.get('MetadataComponentName', 'Unknown')
+                        setup_link = f"https://{base_url}/lightning/setup/FlexiPage/home" if comp_type == 'FlexiPage' else f"https://{base_url}/lightning/setup/ObjectManager/home" if comp_type == 'Layout' else None
+                            
+                        all_results.append({
+                            "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
+                            "Status": f"🔴 HOSTAGE: {comp_type.upper()}", "Hostage Location": comp_name,
+                            "Action Link": setup_link, "Dependency Type": comp_type
+                        })
+            
+                if all_results:
+                    st.markdown("### 📋 Dependency Battleplan")
+                    df_results = pd.DataFrame(all_results)
+                    
+                    clean_count = len(df_results[df_results['Status'] == '🟢 COMPLETELY CLEAN'])
+                    
+                    m1, m2 = st.columns(2)
+                    m1.metric("Reports Clean of Direct Links", clean_count)
+                    m2.metric("Dependencies Found", len(df_results) - clean_count)
+                    st.markdown("---")
+                    
+                    col_config = {
+                        "Report Action": st.column_config.LinkColumn("Report Link", display_text="Open Report ↗"),
+                        "Action Link": st.column_config.LinkColumn("Action Link", display_text="Investigate Hostage ↗")
+                    }
+                    if not any(df_results['Folder Link'] == 'Private User Folder'):
+                        col_config["Folder Link"] = st.column_config.LinkColumn("Folder Link", display_text="Open Folder Settings ↗")
+                    
+                    st.dataframe(df_results, use_container_width=True, hide_index=True, column_config=col_config)
+                    st.info("**Ruthless Tip:** If a FlexiPage is listed, click 'Investigate Hostage' to go to the Lightning App Builder, find that page name, edit it, and remove the Report Chart component.")
 
         # --- THE EXECUTIONER'S BLOCK ---
         st.markdown("---")
@@ -190,9 +190,10 @@ if 'sf' in st.session_state:
                 with st.spinner("Locating Organization ID..."):
                     try:
                         org_id = sf.query("SELECT Id FROM Organization")['records'][0]['Id']
-                        sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": {"folderId": org_id}})
+                        # Bypassing Analytics API - Using pure DML update
+                        sf.Report.update(target_id, {"OwnerId": org_id})
                         st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
-                    except Exception as e: st.error(f"Failed to move report via Analytics API. Error: {e}")
+                    except Exception as e: st.error(f"Failed to move report via Standard API. Error: {e}")
 
         if force_delete and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
@@ -213,17 +214,18 @@ if 'sf' in st.session_state:
                         if not folder_records: st.error("Could not find a folder with the exact API Name 'ZZZDONOTUSETRASH'.")
                         else:
                             trash_folder_id = folder_records[0]['Id']
-                            new_name = f"DEAD REPORT - TRASH - {target_id}"
-                            payload = {"reportMetadata": {"folderId": trash_folder_id, "name": new_name}}
+                            # Name fields are max 40 chars in Salesforce - enforcing truncation to prevent string length errors
+                            new_name = f"DEAD REPORT - {target_id}"[:40] 
+                            
                             try:
-                                sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
+                                # Bypassing Analytics API - Using pure DML update
+                                sf.Report.update(target_id, {"OwnerId": trash_folder_id, "Name": new_name})
                                 st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
                             except Exception as api_err:
-                                # Primary path with rename failed, attempting folder-only fallback deployment
-                                fallback_payload = {"reportMetadata": {"folderId": trash_folder_id}}
-                                sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=fallback_payload)
-                                st.warning(f"Banishment complete via Fallback Engine. Report schema formatting blocked renaming, but {target_id} was successfully moved to the island folder.")
-                    except Exception as e: st.error(f"Failed to quarantine the report via Analytics API. Error: {e}")
+                                # Standard DML Rename failed, forcing folder move only
+                                sf.Report.update(target_id, {"OwnerId": trash_folder_id})
+                                st.warning(f"Banishment complete via Fallback Engine. Renaming failed, but {target_id} was successfully moved to the island folder. Error: {api_err}")
+                    except Exception as e: st.error(f"Failed to quarantine the report. Error: {e}")
 
     # ==========================================
     # TAB 2: FOLDER ID HARVESTER
@@ -282,8 +284,8 @@ if 'sf' in st.session_state:
         st.markdown("""
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
-        2. Move them directly to the `ZZZDONOTUSETRASH` folder.
-        3. Rename them to `DEAD REPORT - TRASH - [ID]` so they vanish from user searches and avoid duplicate name errors. If a report has an invalid schema, it will execute a fallback move to isolate it anyway.
+        2. Move them directly to the `ZZZDONOTUSETRASH` folder using DML updates (bypassing Analytics API blocks).
+        3. Rename them to `DEAD REPORT - [ID]` so they vanish from user searches. If renaming is strictly locked, it will execute a fallback move to isolate it anyway.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -313,21 +315,17 @@ if 'sf' in st.session_state:
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
                                 
                                 try:
-                                    new_name = f"DEAD REPORT - TRASH - {r_id}"
-                                    payload = {
-                                        "reportMetadata": {
-                                            "name": new_name,
-                                            "folderId": trash_folder_id
-                                        }
-                                    }
+                                    # Limit name length to 40 characters to avoid DML string limits
+                                    new_name = f"DEAD REPORT - {r_id}"[:40]
+                                    
                                     try:
-                                        sf.restful(f"analytics/reports/{r_id}", method="PATCH", json=payload)
+                                        # Standard DML update to bypass Analytics API broken layout validation
+                                        sf.Report.update(r_id, {"OwnerId": trash_folder_id, "Name": new_name})
                                         results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
-                                    except Exception as schema_err:
-                                        # Primary move failed due to corrupted layout constraints, shifting to fallback
-                                        fallback_payload = {"reportMetadata": {"folderId": trash_folder_id}}
-                                        sf.restful(f"analytics/reports/{r_id}", method="PATCH", json=fallback_payload)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Banished (Rename Skipped)", "Error": "Schema validation restricted name change"})
+                                    except Exception as dml_err:
+                                        # Primary move failed, shifting to fallback (folder only)
+                                        sf.Report.update(r_id, {"OwnerId": trash_folder_id})
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Banished (Rename Skipped)", "Error": str(dml_err)})
                                 except Exception as e:
                                     results.append({"Report ID": r_id, "Status": "❌ Failed", "Error": str(e)})
                                 
