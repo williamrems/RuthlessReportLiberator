@@ -6,8 +6,39 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V7")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage.")
+st.title("🧨 The Ruthless Report Liberator V8")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Lobotomy.")
+
+# --- REUSABLE LOBOTOMY ENGINE ---
+def execute_lobotomy_quarantine(sf_instance, report_id, target_folder_id, target_name=None):
+    """
+    Strips all complex metadata from a corrupted report to bypass schema validation
+    and forces it into a target folder.
+    """
+    raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
+    meta = raw_report.get("reportMetadata", {})
+    
+    # Wipe the brain of the report
+    meta["reportFormat"] = "TABULAR"
+    meta["buckets"] = []
+    meta["groupingsDown"] = []
+    meta["groupingsAcross"] = []
+    meta["reportFilters"] = []
+    meta.pop("reportBooleanFilter", None)
+    meta.pop("customSummaryFormula", None)
+    
+    # Retain only the very first column to ensure a valid tabular skeleton.
+    # This strips away the rest of the columns, destroying the broken division data.
+    if meta.get("detailColumns") and len(meta["detailColumns"]) > 0:
+        meta["detailColumns"] = [meta["detailColumns"][0]]
+        
+    # Apply quarantine targets
+    meta["folderId"] = target_folder_id
+    if target_name:
+        meta["name"] = target_name
+        
+    # Push the empty shell to the server
+    sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
 with st.sidebar:
@@ -23,7 +54,6 @@ with st.sidebar:
                 username=username, password=password, 
                 security_token=security_token, domain=domain
             )
-            # Clear cached folders on fresh connection
             if 'cached_folders' in st.session_state:
                 del st.session_state['cached_folders']
             st.success("Successfully connected to Salesforce.")
@@ -35,7 +65,6 @@ if 'sf' in st.session_state:
     sf = st.session_state['sf']
     base_url = sf.sf_instance
     
-    # Create the Upgraded Tab Interface
     tab1, tab2, tab3 = st.tabs(["🎯 Single Target Hunter", "📁 Folder ID Harvester", "🗑️ Mass Quarantine Island"])
     
     # ==========================================
@@ -72,7 +101,6 @@ if 'sf' in st.session_state:
                 st.warning("No reports found matching that criteria.")
             else:
                 st.success(f"Found {len(reports)} Report(s). Initiating deep scan...")
-                
                 all_results = []
                 
                 for rep in reports:
@@ -87,21 +115,16 @@ if 'sf' in st.session_state:
                     else:
                         folder_link = f"https://{base_url}/lightning/r/Folder/{owner_id}/view"
                     
-                    # HUNT 1: Dashboards
                     dash_query = f"SELECT Id, DashboardId, Dashboard.Title FROM DashboardComponent WHERE CustomReportId = '{rep_id}'"
                     dash_comps = []
-                    try:
-                        dash_comps = sf.query_all(dash_query).get('records', [])
+                    try: dash_comps = sf.query_all(dash_query).get('records', [])
                     except Exception: pass
                     
-                    # HUNT 2: Analytic Snapshots
                     snap_query = f"SELECT Id, Name FROM AnalyticSnapshot WHERE ReportId = '{rep_id}'"
                     snaps = []
-                    try:
-                        snaps = sf.query(snap_query).get('records', [])
+                    try: snaps = sf.query(snap_query).get('records', [])
                     except Exception: pass
                         
-                    # HUNT 3: Tooling API
                     tooling_deps = []
                     try:
                         tooling_query = f"SELECT MetadataComponentName, MetadataComponentType FROM MetadataComponentDependency WHERE RefMetadataComponentId = '{rep_id_15}'"
@@ -110,7 +133,6 @@ if 'sf' in st.session_state:
                         tooling_deps = tooling_res.get('records', [])
                     except Exception: pass
 
-                    # Compile Results
                     if not dash_comps and not snaps and not tooling_deps:
                         all_results.append({
                             "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
@@ -133,12 +155,10 @@ if 'sf' in st.session_state:
                             "Action Link": f"https://{base_url}/lightning/setup/AnalyticSnapshots/home", "Dependency Type": "Reporting Snapshot"
                         })
                         
-                        
                     for dep in tooling_deps:
                         comp_type = dep.get('MetadataComponentType', 'Unknown')
                         comp_name = dep.get('MetadataComponentName', 'Unknown')
                         setup_link = f"https://{base_url}/lightning/setup/FlexiPage/home" if comp_type == 'FlexiPage' else f"https://{base_url}/lightning/setup/ObjectManager/home" if comp_type == 'Layout' else None
-                            
                         all_results.append({
                             "Report Name": rep_name, "Report Action": rep_link, "Folder Link": folder_link,
                             "Status": f"🔴 HOSTAGE: {comp_type.upper()}", "Hostage Location": comp_name,
@@ -148,7 +168,6 @@ if 'sf' in st.session_state:
                 if all_results:
                     st.markdown("### 📋 Dependency Battleplan")
                     df_results = pd.DataFrame(all_results)
-                    
                     clean_count = len(df_results[df_results['Status'] == '🟢 COMPLETELY CLEAN'])
                     
                     m1, m2 = st.columns(2)
@@ -164,12 +183,10 @@ if 'sf' in st.session_state:
                         col_config["Folder Link"] = st.column_config.LinkColumn("Folder Link", display_text="Open Folder Settings ↗")
                     
                     st.dataframe(df_results, use_container_width=True, hide_index=True, column_config=col_config)
-                    st.info("**Ruthless Tip:** If a FlexiPage is listed, click 'Investigate Hostage' to go to the Lightning App Builder, find that page name, edit it, and remove the Report Chart component.")
 
         # --- THE EXECUTIONER'S BLOCK ---
         st.markdown("---")
         st.subheader("🔥 The Executioner's Block")
-        st.markdown("Force-delete reports via the API, restore broken security contexts via Trojan Horse, or banish them to the Quarantine folder forever.")
         
         col_del1, col_del2 = st.columns([1.5, 2.5])
         with col_del1:
@@ -191,9 +208,14 @@ if 'sf' in st.session_state:
                 with st.spinner("Locating Organization ID..."):
                     try:
                         org_id = sf.query("SELECT Id FROM Organization")['records'][0]['Id']
-                        sf.Report.update(target_id, {"OwnerId": org_id})
+                        payload = {"reportMetadata": {"folderId": org_id}}
+                        sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                         st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
-                    except Exception as e: st.error(f"Failed to move report via Standard API. Error: {e}")
+                    except Exception:
+                        try:
+                            execute_lobotomy_quarantine(sf, target_id, org_id)
+                            st.success("Trojan Horse successful via Lobotomy. Broken layout wiped to force move.")
+                        except Exception as e: st.error(f"Total failure on Trojan Horse. Error: {e}")
 
         if force_delete and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
@@ -208,44 +230,31 @@ if 'sf' in st.session_state:
         if force_quarantine and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
             else:
-                with st.spinner("Locating Quarantine Island (ZZZDONOTUSETRASH)..."):
+                with st.spinner("Executing Quarantine..."):
                     try:
                         folder_records = sf.query("SELECT Id FROM Folder WHERE DeveloperName = 'ZZZDONOTUSETRASH'")['records']
-                        if not folder_records: st.error("Could not find a folder with the exact API Name 'ZZZDONOTUSETRASH'.")
+                        if not folder_records: st.error("Could not find folder API Name 'ZZZDONOTUSETRASH'.")
                         else:
                             trash_folder_id = folder_records[0]['Id']
                             new_name = f"DEAD REPORT - {target_id}"[:40] 
                             
-                            move_success = False
-                            
-                            # ISOLATED STEP 1: Execute the move only
                             try:
-                                sf.Report.update(target_id, {"OwnerId": trash_folder_id})
-                                move_success = True
-                            except Exception as dml_move_err:
+                                payload = {"reportMetadata": {"folderId": trash_folder_id, "name": new_name}}
+                                sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
+                                st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
+                            except Exception:
                                 try:
-                                    sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": {"folderId": trash_folder_id}})
-                                    move_success = True
-                                except Exception as fallback_move_err:
-                                    st.error(f"Total failure on move. DML and Analytics API rejected the request. Error: {dml_move_err}")
-
-                            # ISOLATED STEP 2: Execute rename only if move was successful
-                            if move_success:
-                                try:
-                                    sf.Report.update(target_id, {"Name": new_name})
-                                    st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
-                                except Exception as rename_err:
-                                    st.warning(f"Banishment complete but rename skipped. {target_id} is in the island folder, but corrupt schema blocked the rename action. Error: {rename_err}")
-                    except Exception as e: st.error(f"Failed to quarantine the report. Error: {e}")
+                                    execute_lobotomy_quarantine(sf, target_id, trash_folder_id, new_name)
+                                    st.warning(f"Banishment complete via Lobotomy Engine. Corrupt schema was wiped to force the rename and move.")
+                                except Exception as e:
+                                    st.error(f"Total Quarantine Failure. Error: {e}")
+                    except Exception as e: st.error(f"Failed to quarantine. Error: {e}")
 
     # ==========================================
     # TAB 2: FOLDER ID HARVESTER
     # ==========================================
     with tab2:
         st.subheader("📁 Folder ID Harvester")
-        st.markdown("Select a Report Folder to automatically fetch every Report ID contained inside it. You can copy the raw text output and drop it straight into the Bulk Quarantine Engine tab.")
-        
-        # Pull list of folders if not cached in session state
         if 'cached_folders' not in st.session_state:
             with st.spinner("Mapping org folders..."):
                 try:
@@ -267,25 +276,15 @@ if 'sf' in st.session_state:
                 with st.spinner("Harvesting records..."):
                     try:
                         reports_in_folder = sf.query(f"SELECT Id, Name FROM Report WHERE OwnerId = '{selected_folder_id}' ORDER BY Name ASC")['records']
-                        
-                        if not reports_in_folder:
-                            st.warning("This folder is empty or contains no queryable custom reports.")
+                        if not reports_in_folder: st.warning("This folder is empty or contains no queryable custom reports.")
                         else:
                             st.success(f"Successfully harvested {len(reports_in_folder)} report(s) from this folder!")
-                            
                             folder_data = [{"Report Name": r['Name'], "Report ID": r['Id']} for r in reports_in_folder]
                             st.dataframe(pd.DataFrame(folder_data), use_container_width=True, hide_index=True)
-                            
                             raw_id_list = ", ".join([r['Id'] for r in reports_in_folder])
-                            
                             st.markdown("### 📋 Copypasta Output")
-                            st.markdown("Copy the text block below and paste it directly into the **Bulk Quarantine Engine** input field:")
                             st.text_area("Raw ID Text Block:", value=raw_id_list, height=150)
-                            
-                    except Exception as e:
-                        st.error(f"Failed to extract records from folder: {e}")
-        else:
-            st.info("No report folders detected or connection hasn't been established.")
+                    except Exception as e: st.error(f"Failed to extract records: {e}")
 
     # ==========================================
     # TAB 3: MASS QUARANTINE ISLAND
@@ -295,8 +294,8 @@ if 'sf' in st.session_state:
         st.markdown("""
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
-        2. Move them directly to the `ZZZDONOTUSETRASH` folder using DML updates.
-        3. Rename them to `DEAD REPORT - [ID]` so they vanish from user searches.
+        2. Attempt standard Analytics API move and rename.
+        3. If blocked by validation errors, the **Lobotomy Engine** will wipe the report structure to force the process through.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -307,60 +306,41 @@ if 'sf' in st.session_state:
                 unique_ids = list(set(raw_ids))
                 
                 if not unique_ids:
-                    st.warning("No valid Report IDs found in your input. Make sure they start with '00O'.")
+                    st.warning("No valid Report IDs found in your input.")
                 else:
-                    st.info(f"Found {len(unique_ids)} unique Report ID(s). Initiating mass banishment...")
-                    
                     try:
                         folder_records = sf.query("SELECT Id FROM Folder WHERE DeveloperName = 'ZZZDONOTUSETRASH'")['records']
                         if not folder_records:
-                            st.error("Could not find the 'ZZZDONOTUSETRASH' folder. Please ensure it exists and you have access to it.")
+                            st.error("Could not find the 'ZZZDONOTUSETRASH' folder.")
                         else:
                             trash_folder_id = folder_records[0]['Id']
-                            
                             progress_bar = st.progress(0)
                             status_text = st.empty()
                             results = []
                             
                             for i, r_id in enumerate(unique_ids):
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
-                                
                                 new_name = f"DEAD REPORT - {r_id}"[:40]
-                                move_success = False
-                                error_notes = ""
                                 
-                                # ISOLATED STEP 1: Attempt the Move
+                                # STEP 1: Standard Method
                                 try:
-                                    sf.Report.update(r_id, {"OwnerId": trash_folder_id})
-                                    move_success = True
-                                except Exception as dml_move_err:
+                                    payload = {"reportMetadata": {"name": new_name, "folderId": trash_folder_id}}
+                                    sf.restful(f"analytics/reports/{r_id}", method="PATCH", json=payload)
+                                    results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
+                                except Exception as standard_err:
+                                    # STEP 2: The Lobotomy Protocol
                                     try:
-                                        sf.restful(f"analytics/reports/{r_id}", method="PATCH", json={"reportMetadata": {"folderId": trash_folder_id}})
-                                        move_success = True
-                                        error_notes = "Used Analytics API fallback for move. "
-                                    except Exception as fallback_move_err:
-                                        results.append({"Report ID": r_id, "Status": "❌ Move Failed", "Error": f"Blocked by DML and Analytics API."})
-
-                                # ISOLATED STEP 2: Attempt Rename Only If Move Succeeded
-                                if move_success:
-                                    try:
-                                        sf.Report.update(r_id, {"Name": new_name})
-                                        results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": error_notes})
-                                    except Exception as rename_err:
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Banished (Rename Skipped)", "Error": f"{error_notes}Rename blocked by corrupted schema."})
+                                        execute_lobotomy_quarantine(sf, r_id, trash_folder_id, new_name)
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Lobotomized & Banished", "Error": "Corrupted. Layout wiped to force action."})
+                                    except Exception as lobotomy_err:
+                                        results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(lobotomy_err)})
                                 
                                 progress_bar.progress((i + 1) / len(unique_ids))
                                 
                             status_text.text("Mass Quarantine Complete.")
-                            
-                            # Show Results
                             df_bulk = pd.DataFrame(results)
                             st.dataframe(df_bulk, use_container_width=True, hide_index=True)
                             
-                            success_count = len(df_bulk[df_bulk['Status'].str.contains('✅|⚠️')])
-                            if success_count > 0:
-                                st.success(f"Successfully swept {success_count} report(s) into the trash folder.")
-                                
                     except Exception as e:
                         st.error(f"System error during bulk operation: {e}")
             else:
