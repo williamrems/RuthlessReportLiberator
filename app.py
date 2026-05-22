@@ -7,37 +7,49 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V18")
+st.title("🧨 The Ruthless Report Liberator V19")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Brute-Force Mimic Engine.")
 
 # --- BRUTE-FORCE MIMIC ENGINE ---
 def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_name):
     """
-    Converts the entire payload to a string to guarantee eradication of corrupt data points
-    without altering the structural JSON schema.
+    Converts the payload to a string to guarantee eradication of corrupt division data,
+    then executes a synchronized purge of BucketFields to prevent reference paradoxes.
     """
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
     
-    # 1. Convert to raw string for global search-and-replace
+    # 1. Convert to raw string for global search-and-replace (The Division Fix)
     meta_str = json.dumps(meta)
-    
-    # 2. Eradicate all variants of the corrupt string
     meta_str = meta_str.replace("Granger, IA", "Baldwin")
     meta_str = meta_str.replace("Granger%2C IA", "Baldwin")
     meta_str = meta_str.replace("Granger", "Baldwin")
-    
-    # 3. Convert back to a valid dictionary
     meta = json.loads(meta_str)
     
-    # 4. Strip buckets to ensure secondary validation errors are suppressed
+    # 2. Synchronized BucketField Purge
+    # You cannot delete a bucket definition without deleting its references.
     meta["buckets"] = []
+    
+    if isinstance(meta.get("detailColumns"), list):
+        meta["detailColumns"] = [c for c in meta["detailColumns"] if "BucketField" not in str(c)]
+        
+    if isinstance(meta.get("groupingsDown"), list):
+        meta["groupingsDown"] = [g for g in meta["groupingsDown"] if isinstance(g, dict) and "BucketField" not in str(g.get("name", ""))]
+        
+    if isinstance(meta.get("groupingsAcross"), list):
+        meta["groupingsAcross"] = [g for g in meta["groupingsAcross"] if isinstance(g, dict) and "BucketField" not in str(g.get("name", ""))]
+        
+    if isinstance(meta.get("sortBy"), list):
+        meta["sortBy"] = [s for s in meta["sortBy"] if isinstance(s, dict) and "BucketField" not in str(s.get("sortColumn", ""))]
+        
+    if isinstance(meta.get("aggregates"), list):
+        meta["aggregates"] = [a for a in meta["aggregates"] if "BucketField" not in str(a)]
             
-    # 5. Update the quarantine targets
+    # 3. Update the quarantine targets
     meta["folderId"] = target_folder_id
     meta["name"] = target_name
         
-    # 6. Push the healed schema back to the server
+    # 4. Push the healed schema back to the server
     sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
@@ -248,7 +260,7 @@ if 'sf' in st.session_state:
                             except Exception:
                                 try:
                                     execute_bruteforce_mimic(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Brute-Force Mimic Engine. Global search-and-replace bypassed validation.")
+                                    st.warning(f"Banishment complete via Brute-Force Mimic Engine. Validation walls bypassed.")
                                 except Exception as e:
                                     st.error(f"Total Quarantine Failure. Report could not be moved: {e}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
@@ -298,7 +310,7 @@ if 'sf' in st.session_state:
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
         2. Attempt standard Analytics API move and rename.
-        3. If blocked by division validation errors, the **Brute-Force Mimic Engine** will globally replace corrupt values with active ones to force the rename and move.
+        3. If blocked by validation errors, the **Brute-Force Mimic Engine** will globally replace corrupt values and safely purge BucketFields to guarantee completion.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -332,7 +344,7 @@ if 'sf' in st.session_state:
                                 except Exception:
                                     try:
                                         execute_bruteforce_mimic(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Global data search-and-replace forced action."})
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Synchronized purge forced action."})
                                     except Exception as repair_err:
                                         results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(repair_err)})
                                 
