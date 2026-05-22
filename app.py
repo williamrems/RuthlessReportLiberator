@@ -4,8 +4,8 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V2")
-st.markdown("Find the dashboards holding your reports hostage (even in the Recycle Bin), neutralize the dependencies, and purge your org.")
+st.title("🧨 The Ruthless Report Liberator V3")
+st.markdown("Find the dashboards and snapshots holding your reports hostage, neutralize the dependencies, and purge your org.")
 
 # --- SIDEBAR: AUTHENTICATION ---
 with st.sidebar:
@@ -42,8 +42,8 @@ if 'sf' in st.session_state:
         execute_hunt = st.button("Hunt Dependencies", type="primary", use_container_width=True)
 
     if execute_hunt and search_term:
-        with st.spinner("Scanning for targets (including Recycle Bin)..."):
-            # 1. Fetch the Reports (Added OwnerId for Folder tracking)
+        with st.spinner("Scanning for Dashboards and Reporting Snapshots..."):
+            # 1. Fetch the Reports
             is_id = search_term.startswith('00O') and len(search_term) in [15, 18]
             
             if is_id:
@@ -61,95 +61,103 @@ if 'sf' in st.session_state:
             if not reports:
                 st.warning("No reports found matching that criteria.")
             else:
-                st.success(f"Found {len(reports)} Report(s). Scanning for Dashboard hostiles...")
+                st.success(f"Found {len(reports)} Report(s). Initiating deep scan...")
                 
-                # 2. Iterate through reports and find Dashboard dependencies
                 all_results = []
                 
                 for rep in reports:
                     rep_id = rep['Id']
                     rep_name = rep['Name']
                     owner_id = rep.get('OwnerId', '')
-                    
                     rep_link = f"https://{base_url}/lightning/r/Report/{rep_id}/view"
                     
-                    # Determine Folder Routing
                     if owner_id.startswith('005'):
                         folder_link = "Private User Folder"
                     else:
                         folder_link = f"https://{base_url}/lightning/r/Folder/{owner_id}/view"
                     
-                    dash_query = f"""
-                        SELECT Id, DashboardId, Dashboard.Title, Dashboard.DeveloperName 
-                        FROM DashboardComponent 
-                        WHERE CustomReportId = '{rep_id}'
-                    """
+                    # HUNT 1: Dashboards (Including Recycle Bin)
+                    dash_query = f"SELECT Id, DashboardId, Dashboard.Title FROM DashboardComponent WHERE CustomReportId = '{rep_id}'"
+                    dash_comps = []
                     try:
-                        # KEY CHANGE: query_all() forces Salesforce to check the Recycle Bin
                         dash_comps = sf.query_all(dash_query).get('records', [])
                     except Exception as e:
-                        st.error(f"Failed to query Dashboard Components for {rep_name}: {e}")
-                        continue
-                        
-                    if not dash_comps:
+                        pass
+                    
+                    # HUNT 2: Analytic Snapshots
+                    snap_query = f"SELECT Id, Name FROM AnalyticSnapshot WHERE ReportId = '{rep_id}'"
+                    snaps = []
+                    try:
+                        snaps = sf.query(snap_query).get('records', [])
+                    except Exception as e:
+                        pass
+
+                    # Compile Results
+                    if not dash_comps and not snaps:
                         all_results.append({
                             "Report Name": rep_name,
                             "Report Action": rep_link,
                             "Folder Link": folder_link,
-                            "Status": "🟢 SAFE TO DELETE",
-                            "Hostage Dashboard": "None",
-                            "Dashboard Action": "N/A",
-                            "Component ID": "N/A"
+                            "Status": "🟢 CLEAN (No Direct Links)",
+                            "Hostage Location": "None",
+                            "Action Link": None, # Fixed UI Bug here
+                            "Dependency Type": "N/A"
                         })
-                    else:
-                        for comp in dash_comps:
-                            dash_id = comp.get('DashboardId')
-                            dash_title = comp.get('Dashboard', {}).get('Title', 'Unknown (Likely Deleted)')
-                            dash_link = f"https://{base_url}/lightning/r/Dashboard/{dash_id}/view"
-                            
-                            all_results.append({
-                                "Report Name": rep_name,
-                                "Report Action": rep_link,
-                                "Folder Link": folder_link,
-                                "Status": "🔴 HELD HOSTAGE",
-                                "Hostage Dashboard": dash_title,
-                                "Dashboard Action": dash_link,
-                                "Component ID": comp.get('Id')
-                            })
+                    
+                    for comp in dash_comps:
+                        dash_id = comp.get('DashboardId')
+                        dash_title = comp.get('Dashboard', {}).get('Title', 'Unknown (Likely Deleted)')
+                        all_results.append({
+                            "Report Name": rep_name,
+                            "Report Action": rep_link,
+                            "Folder Link": folder_link,
+                            "Status": "🔴 HOSTAGE: DASHBOARD",
+                            "Hostage Location": dash_title,
+                            "Action Link": f"https://{base_url}/lightning/r/Dashboard/{dash_id}/view",
+                            "Dependency Type": "DashboardComponent"
+                        })
+                        
+                    for snap in snaps:
+                        all_results.append({
+                            "Report Name": rep_name,
+                            "Report Action": rep_link,
+                            "Folder Link": folder_link,
+                            "Status": "🔴 HOSTAGE: SNAPSHOT",
+                            "Hostage Location": snap.get('Name'),
+                            "Action Link": f"https://{base_url}/lightning/setup/AnalyticSnapshots/page?address=%2F{snap.get('Id')}",
+                            "Dependency Type": "Reporting Snapshot"
+                        })
                 
-                # 3. Render the Battleplan
+                # Render Battleplan
                 if all_results:
                     st.markdown("### 📋 Dependency Battleplan")
                     df_results = pd.DataFrame(all_results)
                     
-                    safe_count = len(df_results[df_results['Status'] == '🟢 SAFE TO DELETE'])
-                    hostage_count = len(df_results[df_results['Status'] == '🔴 HELD HOSTAGE'])
+                    clean_count = len(df_results[df_results['Status'] == '🟢 CLEAN (No Direct Links)'])
+                    hostage_count = len(df_results) - clean_count
                     
                     m1, m2 = st.columns(2)
-                    m1.metric("Reports Safe to Delete Immediately", safe_count)
-                    m2.metric("Dependencies Blocking Deletion", hostage_count)
+                    m1.metric("Reports Clean of Direct Links", clean_count)
+                    m2.metric("Dependencies Found", hostage_count)
                     
                     st.markdown("---")
                     
-                    # Apply Link columns conditionally
                     col_config = {
                         "Report Action": st.column_config.LinkColumn("Report Link", display_text="Open Report ↗"),
-                        "Dashboard Action": st.column_config.LinkColumn("Dashboard Link", display_text="Open Dashboard ↗")
+                        "Action Link": st.column_config.LinkColumn("Action Link", display_text="Investigate Hostage ↗")
                     }
                     
-                    # Only make Folder a link if it's not a private text string
                     if not any(df_results['Folder Link'] == 'Private User Folder'):
                         col_config["Folder Link"] = st.column_config.LinkColumn("Folder Link", display_text="Open Folder Settings ↗")
                     
                     st.dataframe(
                         df_results, 
-                        use_container_width=True, 
-                        hide_index=True,
+                        use_container_width=True, hide_index=True,
                         height=min(600, max(150, len(df_results) * 35 + 40)),
                         column_config=col_config
                     )
                     
-                    st.info("**Ruthless Tip:** If a Hostage Dashboard is listed but opening the link gives you an error, that dashboard is in the Recycle Bin! You must empty the org's Recycle Bin to sever the tie.")
+                    st.info("**Ruthless Tip:** If the status is CLEAN but Salesforce still blocks deletion, the report is either embedded on a Lightning Page (Home/Account page) via a 'Report Chart' component, or there is a ghost reference in your Recycle Bin. Go empty the org's Recycle Bin manually to force a garbage collection cleanup.")
 
     # --- THE EXECUTIONER'S BLOCK ---
     st.markdown("---")
