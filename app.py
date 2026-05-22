@@ -6,75 +6,31 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V16")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Recursive Healing.")
+st.title("🧨 The Ruthless Report Liberator V17")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Classic Mimic Engine.")
 
-# --- RECURSIVE HEALING ENGINE ---
-def hunt_and_heal(node):
+# --- CLASSIC MIMIC ENGINE ---
+def execute_classic_mimic(sf_instance, report_id, target_folder_id, target_name):
     """
-    Recursively navigates the JSON tree to find and overwrite corrupt values
-    and excise nodes referencing broken components like BucketFields.
+    Mimics the exact action of fixing the Division in Salesforce Classic.
+    Leaves the entire report schema perfectly intact to bypass JSON_PARSER_ERRORs.
     """
-    if isinstance(node, dict):
-        # Target explicit division filters just in case
-        is_division = str(node.get("name", "")).lower() == "division" or str(node.get("column", "")).lower() == "division"
-        if is_division:
-            node["value"] = "Baldwin"
-        
-        for k, v in list(node.items()):
-            if isinstance(v, str):
-                # Search and replace corrupt strings anywhere they exist
-                if "Granger" in v:
-                    node[k] = "Baldwin"
-            elif isinstance(v, (dict, list)):
-                hunt_and_heal(v)
-                
-    elif isinstance(node, list):
-        items_to_keep = []
-        for item in node:
-            if isinstance(item, str):
-                # Drop strings that reference broken buckets (e.g., from aggregates or detailColumns)
-                if "BucketField" in item:
-                    continue  
-                if "Granger" in item:
-                    item = "Baldwin"
-                items_to_keep.append(item)
-                continue
-                
-            elif isinstance(item, dict):
-                # Drop objects that reference broken buckets (e.g., groupings or filters)
-                if "BucketField" in str(item.get("column", "")) or "BucketField" in str(item.get("name", "")) or "BucketField" in str(item.get("formula", "")):
-                    continue
-            
-            if isinstance(item, (dict, list)):
-                hunt_and_heal(item)
-                
-            items_to_keep.append(item)
-            
-        node.clear()
-        node.extend(items_to_keep)
-
-def execute_recursive_repair(sf_instance, report_id, target_folder_id, target_name=None):
-    """
-    Pulls report metadata, sanitizes known break-points, and recursively heals the rest.
-    """
+    # 1. Pull the exact existing metadata
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
     
-    # Pre-emptively clear complex objects that break when dependencies shift
-    meta["buckets"] = []
-    meta["customSummaryFormulas"] = []
-    meta["customDetailFormulas"] = []
-    
-    # Launch the recursive search-and-replace algorithm
-    hunt_and_heal(meta)
-    
-    # Apply quarantine targets
+    # 2. Mimic the UI: Locate the Division standard filter and swap it to Baldwin
+    std_filters = meta.get("standardFilters", [])
+    for f in std_filters:
+        if isinstance(f, dict) and f.get("name") == "division":
+            f["value"] = "Baldwin"
+            break  # Stop searching once we fix the division
+            
+    # 3. Update the quarantine targets
     meta["folderId"] = target_folder_id
-    if target_name:
-        meta["name"] = target_name
+    meta["name"] = target_name
         
-    # Push the healed payload to the server
+    # 4. Push the exact same schema back, just with the division, name, and folder changed.
     sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
@@ -250,8 +206,11 @@ if 'sf' in st.session_state:
                             sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                             st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                         except Exception:
-                            execute_recursive_repair(sf, target_id, org_id)
-                            st.success("Trojan Horse successful via Recursive Repair. Data injected to force move.")
+                            # Re-run with the original name just to change the folder
+                            raw_report = sf.restful(f"analytics/reports/{target_id}")
+                            existing_name = raw_report.get("reportMetadata", {}).get("name", "DEAD REPORT")
+                            execute_classic_mimic(sf, target_id, org_id, existing_name)
+                            st.success("Trojan Horse successful via Classic Mimic. Division swapped to Baldwin to force move.")
                     except Exception as e: 
                         st.error(f"Total failure on Trojan Horse move. Error: {e}")
 
@@ -282,8 +241,8 @@ if 'sf' in st.session_state:
                                 st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
                             except Exception:
                                 try:
-                                    execute_recursive_repair(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Recursive Repair. Data was injected to force the rename and move.")
+                                    execute_classic_mimic(sf, target_id, trash_folder_id, new_name)
+                                    st.warning(f"Banishment complete via Classic Mimic Engine. Division flipped to Baldwin to bypass validation.")
                                 except Exception as e:
                                     st.error(f"Total Quarantine Failure. Report could not be moved: {e}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
@@ -333,7 +292,7 @@ if 'sf' in st.session_state:
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
         2. Attempt standard Analytics API move and rename.
-        3. If blocked by validation errors, the **Recursive Repair Engine** will traverse the raw JSON tree to inject active data and strip broken components to force the process through.
+        3. If blocked by division validation errors, the **Classic Mimic Engine** will surgically swap the corrupt Division filter to 'Baldwin' to force the rename and move.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -366,8 +325,8 @@ if 'sf' in st.session_state:
                                     results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
                                 except Exception:
                                     try:
-                                        execute_recursive_repair(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Corrupt schema was autonomously repaired to force action."})
+                                        execute_classic_mimic(sf, r_id, trash_folder_id, new_name)
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Division swapped to Baldwin to force action."})
                                     except Exception as repair_err:
                                         results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(repair_err)})
                                 
