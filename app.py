@@ -2,35 +2,42 @@ import streamlit as st
 import pandas as pd
 import urllib.parse
 import re
+import json
 from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V17")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Classic Mimic Engine.")
+st.title("🧨 The Ruthless Report Liberator V18")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Brute-Force Mimic Engine.")
 
-# --- CLASSIC MIMIC ENGINE ---
-def execute_classic_mimic(sf_instance, report_id, target_folder_id, target_name):
+# --- BRUTE-FORCE MIMIC ENGINE ---
+def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_name):
     """
-    Mimics the exact action of fixing the Division in Salesforce Classic.
-    Leaves the entire report schema perfectly intact to bypass JSON_PARSER_ERRORs.
+    Converts the entire payload to a string to guarantee eradication of corrupt data points
+    without altering the structural JSON schema.
     """
-    # 1. Pull the exact existing metadata
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
     
-    # 2. Mimic the UI: Locate the Division standard filter and swap it to Baldwin
-    std_filters = meta.get("standardFilters", [])
-    for f in std_filters:
-        if isinstance(f, dict) and f.get("name") == "division":
-            f["value"] = "Baldwin"
-            break  # Stop searching once we fix the division
+    # 1. Convert to raw string for global search-and-replace
+    meta_str = json.dumps(meta)
+    
+    # 2. Eradicate all variants of the corrupt string
+    meta_str = meta_str.replace("Granger, IA", "Baldwin")
+    meta_str = meta_str.replace("Granger%2C IA", "Baldwin")
+    meta_str = meta_str.replace("Granger", "Baldwin")
+    
+    # 3. Convert back to a valid dictionary
+    meta = json.loads(meta_str)
+    
+    # 4. Strip buckets to ensure secondary validation errors are suppressed
+    meta["buckets"] = []
             
-    # 3. Update the quarantine targets
+    # 5. Update the quarantine targets
     meta["folderId"] = target_folder_id
     meta["name"] = target_name
         
-    # 4. Push the exact same schema back, just with the division, name, and folder changed.
+    # 6. Push the healed schema back to the server
     sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
@@ -206,11 +213,10 @@ if 'sf' in st.session_state:
                             sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                             st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                         except Exception:
-                            # Re-run with the original name just to change the folder
                             raw_report = sf.restful(f"analytics/reports/{target_id}")
                             existing_name = raw_report.get("reportMetadata", {}).get("name", "DEAD REPORT")
-                            execute_classic_mimic(sf, target_id, org_id, existing_name)
-                            st.success("Trojan Horse successful via Classic Mimic. Division swapped to Baldwin to force move.")
+                            execute_bruteforce_mimic(sf, target_id, org_id, existing_name)
+                            st.success("Trojan Horse successful via Brute-Force Mimic. Corruption eradicated to force move.")
                     except Exception as e: 
                         st.error(f"Total failure on Trojan Horse move. Error: {e}")
 
@@ -241,8 +247,8 @@ if 'sf' in st.session_state:
                                 st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
                             except Exception:
                                 try:
-                                    execute_classic_mimic(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Classic Mimic Engine. Division flipped to Baldwin to bypass validation.")
+                                    execute_bruteforce_mimic(sf, target_id, trash_folder_id, new_name)
+                                    st.warning(f"Banishment complete via Brute-Force Mimic Engine. Global search-and-replace bypassed validation.")
                                 except Exception as e:
                                     st.error(f"Total Quarantine Failure. Report could not be moved: {e}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
@@ -292,7 +298,7 @@ if 'sf' in st.session_state:
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
         2. Attempt standard Analytics API move and rename.
-        3. If blocked by division validation errors, the **Classic Mimic Engine** will surgically swap the corrupt Division filter to 'Baldwin' to force the rename and move.
+        3. If blocked by division validation errors, the **Brute-Force Mimic Engine** will globally replace corrupt values with active ones to force the rename and move.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -325,8 +331,8 @@ if 'sf' in st.session_state:
                                     results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
                                 except Exception:
                                     try:
-                                        execute_classic_mimic(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Division swapped to Baldwin to force action."})
+                                        execute_bruteforce_mimic(sf, r_id, trash_folder_id, new_name)
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Global data search-and-replace forced action."})
                                     except Exception as repair_err:
                                         results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(repair_err)})
                                 
