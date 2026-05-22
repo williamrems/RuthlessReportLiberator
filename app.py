@@ -6,7 +6,7 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V10")
+st.title("🧨 The Ruthless Report Liberator V11")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Nuclear Lobotomy.")
 
 # --- REUSABLE NUCLEAR LOBOTOMY ENGINE ---
@@ -23,11 +23,12 @@ def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_na
     if meta.get("detailColumns") and len(meta["detailColumns"]) > 0:
         meta["detailColumns"] = [meta["detailColumns"][0]]
         
-    # 2. Obliterate Groupings, Filters, Aggregates, and Buckets 
-    # Must explicitly pass empty arrays to force the PATCH merge to delete existing corrupted data.
+    # 2. Obliterate Groupings, Filters, Aggregates, Buckets, and Cross Filters
+    # Explicitly passing empty arrays forces the PATCH merge to delete existing corrupted data.
     meta["groupingsDown"] = []
     meta["groupingsAcross"] = []
     meta["reportFilters"] = []
+    meta["crossFilters"] = []
     meta["buckets"] = []
     meta["aggregates"] = []
     
@@ -43,11 +44,10 @@ def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_na
     for key in keys_to_nuke:
         meta.pop(key, None)
         
-    # 4. Neutralize Standard Filters (Addresses the deleted Division error)
+    # 4. Eradicate Broken Standard Filters (e.g., deleted Divisions)
+    # Instead of blanking the value, we rip the entire division dict out of the array.
     if "standardFilters" in meta:
-        for std_filter in meta["standardFilters"]:
-            if std_filter.get("name") == "division":
-                std_filter["value"] = ""
+        meta["standardFilters"] = [f for f in meta["standardFilters"] if f.get("name") != "division"]
                 
     # Apply quarantine targets
     meta["folderId"] = target_folder_id
@@ -225,10 +225,12 @@ if 'sf' in st.session_state:
                 with st.spinner("Locating Organization ID..."):
                     try:
                         org_id = sf.query("SELECT Id FROM Organization")['records'][0]['Id']
+                        # POLITE ATTEMPT FIRST
                         payload = {"reportMetadata": {"folderId": org_id}}
                         sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                         st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                     except Exception:
+                        # NUCLEAR ESCALATION
                         try:
                             execute_nuclear_lobotomy(sf, target_id, org_id)
                             st.success("Trojan Horse successful via Nuclear Lobotomy. Broken layout wiped to force move.")
@@ -255,11 +257,13 @@ if 'sf' in st.session_state:
                             trash_folder_id = folder_records[0]['Id']
                             new_name = f"DEAD REPORT - {target_id}"[:40] 
                             
+                            # POLITE ATTEMPT FIRST
                             try:
                                 payload = {"reportMetadata": {"folderId": trash_folder_id, "name": new_name}}
                                 sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                                 st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
                             except Exception:
+                                # NUCLEAR ESCALATION
                                 try:
                                     execute_nuclear_lobotomy(sf, target_id, trash_folder_id, new_name)
                                     st.warning(f"Banishment complete via Nuclear Lobotomy. Corrupt schema was wiped to force the rename and move.")
@@ -339,13 +343,13 @@ if 'sf' in st.session_state:
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
                                 new_name = f"DEAD REPORT - {r_id}"[:40]
                                 
-                                # STEP 1: Standard Method
+                                # STEP 1: Polite Standard Method
                                 try:
                                     payload = {"reportMetadata": {"name": new_name, "folderId": trash_folder_id}}
                                     sf.restful(f"analytics/reports/{r_id}", method="PATCH", json=payload)
                                     results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
                                 except Exception:
-                                    # STEP 2: The Nuclear Lobotomy
+                                    # STEP 2: The Nuclear Lobotomy Escalation
                                     try:
                                         execute_nuclear_lobotomy(sf, r_id, trash_folder_id, new_name)
                                         results.append({"Report ID": r_id, "Status": "⚠️ Lobotomized & Banished", "Error": "Corrupted. Layout completely wiped to force action."})
