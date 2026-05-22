@@ -6,7 +6,7 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V9")
+st.title("🧨 The Ruthless Report Liberator V10")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Nuclear Lobotomy.")
 
 # --- REUSABLE NUCLEAR LOBOTOMY ENGINE ---
@@ -23,16 +23,17 @@ def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_na
     if meta.get("detailColumns") and len(meta["detailColumns"]) > 0:
         meta["detailColumns"] = [meta["detailColumns"][0]]
         
-    # 2. Obliterate Groupings, Filters, and Buckets
+    # 2. Obliterate Groupings, Filters, Aggregates, and Buckets 
+    # Must explicitly pass empty arrays to force the PATCH merge to delete existing corrupted data.
     meta["groupingsDown"] = []
     meta["groupingsAcross"] = []
     meta["reportFilters"] = []
     meta["buckets"] = []
-    meta.pop("reportBooleanFilter", None)
-    
-    # 3. Obliterate Aggregates & Formulas (Addresses the FORMULA and s!AMOUNT errors)
     meta["aggregates"] = []
+    
+    # 3. Purge invalid keys
     keys_to_nuke = [
+        "reportBooleanFilter",
         "customSummaryFormula",
         "customSummaryFormulas",
         "customDetailFormulas",
@@ -42,11 +43,7 @@ def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_na
     for key in keys_to_nuke:
         meta.pop(key, None)
         
-    meta["hasChart"] = False
-    
     # 4. Neutralize Standard Filters (Addresses the deleted Division error)
-    # We cannot just delete standardFilters because Salesforce requires scope/date filters.
-    # We iterate and surgically blank out the broken Division filter.
     if "standardFilters" in meta:
         for std_filter in meta["standardFilters"]:
             if std_filter.get("name") == "division":
@@ -57,7 +54,7 @@ def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_na
     if target_name:
         meta["name"] = target_name
         
-    # Push the empty shell to the server
+    # Push the strict, schema-compliant empty shell to the server
     sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
