@@ -133,6 +133,7 @@ if 'sf' in st.session_state:
                             "Action Link": f"https://{base_url}/lightning/setup/AnalyticSnapshots/home", "Dependency Type": "Reporting Snapshot"
                         })
                         
+                        
                     for dep in tooling_deps:
                         comp_type = dep.get('MetadataComponentType', 'Unknown')
                         comp_name = dep.get('MetadataComponentName', 'Unknown')
@@ -190,7 +191,6 @@ if 'sf' in st.session_state:
                 with st.spinner("Locating Organization ID..."):
                     try:
                         org_id = sf.query("SELECT Id FROM Organization")['records'][0]['Id']
-                        # Bypassing Analytics API - Using pure DML update
                         sf.Report.update(target_id, {"OwnerId": org_id})
                         st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                     except Exception as e: st.error(f"Failed to move report via Standard API. Error: {e}")
@@ -214,17 +214,28 @@ if 'sf' in st.session_state:
                         if not folder_records: st.error("Could not find a folder with the exact API Name 'ZZZDONOTUSETRASH'.")
                         else:
                             trash_folder_id = folder_records[0]['Id']
-                            # Name fields are max 40 chars in Salesforce - enforcing truncation to prevent string length errors
                             new_name = f"DEAD REPORT - {target_id}"[:40] 
                             
+                            move_success = False
+                            
+                            # ISOLATED STEP 1: Execute the move only
                             try:
-                                # Bypassing Analytics API - Using pure DML update
-                                sf.Report.update(target_id, {"OwnerId": trash_folder_id, "Name": new_name})
-                                st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
-                            except Exception as api_err:
-                                # Standard DML Rename failed, forcing folder move only
                                 sf.Report.update(target_id, {"OwnerId": trash_folder_id})
-                                st.warning(f"Banishment complete via Fallback Engine. Renaming failed, but {target_id} was successfully moved to the island folder. Error: {api_err}")
+                                move_success = True
+                            except Exception as dml_move_err:
+                                try:
+                                    sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": {"folderId": trash_folder_id}})
+                                    move_success = True
+                                except Exception as fallback_move_err:
+                                    st.error(f"Total failure on move. DML and Analytics API rejected the request. Error: {dml_move_err}")
+
+                            # ISOLATED STEP 2: Execute rename only if move was successful
+                            if move_success:
+                                try:
+                                    sf.Report.update(target_id, {"Name": new_name})
+                                    st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
+                                except Exception as rename_err:
+                                    st.warning(f"Banishment complete but rename skipped. {target_id} is in the island folder, but corrupt schema blocked the rename action. Error: {rename_err}")
                     except Exception as e: st.error(f"Failed to quarantine the report. Error: {e}")
 
     # ==========================================
@@ -284,8 +295,8 @@ if 'sf' in st.session_state:
         st.markdown("""
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
-        2. Move them directly to the `ZZZDONOTUSETRASH` folder using DML updates (bypassing Analytics API blocks).
-        3. Rename them to `DEAD REPORT - [ID]` so they vanish from user searches. If renaming is strictly locked, it will execute a fallback move to isolate it anyway.
+        2. Move them directly to the `ZZZDONOTUSETRASH` folder using DML updates.
+        3. Rename them to `DEAD REPORT - [ID]` so they vanish from user searches.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -314,20 +325,29 @@ if 'sf' in st.session_state:
                             for i, r_id in enumerate(unique_ids):
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
                                 
+                                new_name = f"DEAD REPORT - {r_id}"[:40]
+                                move_success = False
+                                error_notes = ""
+                                
+                                # ISOLATED STEP 1: Attempt the Move
                                 try:
-                                    # Limit name length to 40 characters to avoid DML string limits
-                                    new_name = f"DEAD REPORT - {r_id}"[:40]
-                                    
+                                    sf.Report.update(r_id, {"OwnerId": trash_folder_id})
+                                    move_success = True
+                                except Exception as dml_move_err:
                                     try:
-                                        # Standard DML update to bypass Analytics API broken layout validation
-                                        sf.Report.update(r_id, {"OwnerId": trash_folder_id, "Name": new_name})
-                                        results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
-                                    except Exception as dml_err:
-                                        # Primary move failed, shifting to fallback (folder only)
-                                        sf.Report.update(r_id, {"OwnerId": trash_folder_id})
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Banished (Rename Skipped)", "Error": str(dml_err)})
-                                except Exception as e:
-                                    results.append({"Report ID": r_id, "Status": "❌ Failed", "Error": str(e)})
+                                        sf.restful(f"analytics/reports/{r_id}", method="PATCH", json={"reportMetadata": {"folderId": trash_folder_id}})
+                                        move_success = True
+                                        error_notes = "Used Analytics API fallback for move. "
+                                    except Exception as fallback_move_err:
+                                        results.append({"Report ID": r_id, "Status": "❌ Move Failed", "Error": f"Blocked by DML and Analytics API."})
+
+                                # ISOLATED STEP 2: Attempt Rename Only If Move Succeeded
+                                if move_success:
+                                    try:
+                                        sf.Report.update(r_id, {"Name": new_name})
+                                        results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": error_notes})
+                                    except Exception as rename_err:
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Banished (Rename Skipped)", "Error": f"{error_notes}Rename blocked by corrupted schema."})
                                 
                                 progress_bar.progress((i + 1) / len(unique_ids))
                                 
