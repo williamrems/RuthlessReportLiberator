@@ -224,11 +224,13 @@ if 'sf' in st.session_state:
                     org_query = "SELECT Id FROM Organization"
                     org_id = sf.query(org_query)['records'][0]['Id']
                     
-                    # Force the report into the public folder to restore security context
-                    sf.Report.update(target_id, {'OwnerId': org_id})
+                    # Force the report into the public folder using the Analytics API
+                    payload = {"reportMetadata": {"folderId": org_id}}
+                    sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
+                    
                     st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                 except Exception as e:
-                    st.error(f"Failed to move report. Error: {e}")
+                    st.error(f"Failed to move report via Analytics API. Error: {e}")
 
     # ACTION 2: The Kill Switch
     if force_delete and target_id:
@@ -259,8 +261,10 @@ if 'sf' in st.session_state:
                     else:
                         trash_folder_id = folder_records[0]['Id']
                         
-                        # Move the report to the trash folder
-                        sf.Report.update(target_id, {'OwnerId': trash_folder_id})
+                        # Move the report to the trash folder using the Analytics API
+                        payload = {"reportMetadata": {"folderId": trash_folder_id}}
+                        sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
+                        
                         st.success(f"Banishment complete. {target_id} has been exiled to the ZZZDONOTUSETRASH folder.")
                 except Exception as e:
-                    st.error(f"Failed to quarantine the report. Error: {e}")
+                    st.error(f"Failed to quarantine the report via Analytics API. Error: {e}")
