@@ -6,32 +6,52 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V8")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Lobotomy.")
+st.title("🧨 The Ruthless Report Liberator V9")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Nuclear Lobotomy.")
 
-# --- REUSABLE LOBOTOMY ENGINE ---
-def execute_lobotomy_quarantine(sf_instance, report_id, target_folder_id, target_name=None):
+# --- REUSABLE NUCLEAR LOBOTOMY ENGINE ---
+def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_name=None):
     """
-    Strips all complex metadata from a corrupted report to bypass schema validation
+    Obliterates all complex metadata from a corrupted report to bypass schema validation
     and forces it into a target folder.
     """
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
     
-    # Wipe the brain of the report
+    # 1. Base Format & Columns
     meta["reportFormat"] = "TABULAR"
-    meta["buckets"] = []
-    meta["groupingsDown"] = []
-    meta["groupingsAcross"] = []
-    meta["reportFilters"] = []
-    meta.pop("reportBooleanFilter", None)
-    meta.pop("customSummaryFormula", None)
-    
-    # Retain only the very first column to ensure a valid tabular skeleton.
-    # This strips away the rest of the columns, destroying the broken division data.
     if meta.get("detailColumns") and len(meta["detailColumns"]) > 0:
         meta["detailColumns"] = [meta["detailColumns"][0]]
         
+    # 2. Obliterate Groupings, Filters, and Buckets
+    meta["groupingsDown"] = []
+    meta["groupingsAcross"] = []
+    meta["reportFilters"] = []
+    meta["buckets"] = []
+    meta.pop("reportBooleanFilter", None)
+    
+    # 3. Obliterate Aggregates & Formulas (Addresses the FORMULA and s!AMOUNT errors)
+    meta["aggregates"] = []
+    keys_to_nuke = [
+        "customSummaryFormula",
+        "customSummaryFormulas",
+        "customDetailFormulas",
+        "reportChart",
+        "chart"
+    ]
+    for key in keys_to_nuke:
+        meta.pop(key, None)
+        
+    meta["hasChart"] = False
+    
+    # 4. Neutralize Standard Filters (Addresses the deleted Division error)
+    # We cannot just delete standardFilters because Salesforce requires scope/date filters.
+    # We iterate and surgically blank out the broken Division filter.
+    if "standardFilters" in meta:
+        for std_filter in meta["standardFilters"]:
+            if std_filter.get("name") == "division":
+                std_filter["value"] = ""
+                
     # Apply quarantine targets
     meta["folderId"] = target_folder_id
     if target_name:
@@ -213,8 +233,8 @@ if 'sf' in st.session_state:
                         st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                     except Exception:
                         try:
-                            execute_lobotomy_quarantine(sf, target_id, org_id)
-                            st.success("Trojan Horse successful via Lobotomy. Broken layout wiped to force move.")
+                            execute_nuclear_lobotomy(sf, target_id, org_id)
+                            st.success("Trojan Horse successful via Nuclear Lobotomy. Broken layout wiped to force move.")
                         except Exception as e: st.error(f"Total failure on Trojan Horse. Error: {e}")
 
         if force_delete and target_id:
@@ -244,8 +264,8 @@ if 'sf' in st.session_state:
                                 st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
                             except Exception:
                                 try:
-                                    execute_lobotomy_quarantine(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Lobotomy Engine. Corrupt schema was wiped to force the rename and move.")
+                                    execute_nuclear_lobotomy(sf, target_id, trash_folder_id, new_name)
+                                    st.warning(f"Banishment complete via Nuclear Lobotomy. Corrupt schema was wiped to force the rename and move.")
                                 except Exception as e:
                                     st.error(f"Total Quarantine Failure. Error: {e}")
                     except Exception as e: st.error(f"Failed to quarantine. Error: {e}")
@@ -295,7 +315,7 @@ if 'sf' in st.session_state:
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
         2. Attempt standard Analytics API move and rename.
-        3. If blocked by validation errors, the **Lobotomy Engine** will wipe the report structure to force the process through.
+        3. If blocked by validation errors, the **Nuclear Lobotomy** will wipe the report structure completely blank to force the process through.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -327,11 +347,11 @@ if 'sf' in st.session_state:
                                     payload = {"reportMetadata": {"name": new_name, "folderId": trash_folder_id}}
                                     sf.restful(f"analytics/reports/{r_id}", method="PATCH", json=payload)
                                     results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
-                                except Exception as standard_err:
-                                    # STEP 2: The Lobotomy Protocol
+                                except Exception:
+                                    # STEP 2: The Nuclear Lobotomy
                                     try:
-                                        execute_lobotomy_quarantine(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Lobotomized & Banished", "Error": "Corrupted. Layout wiped to force action."})
+                                        execute_nuclear_lobotomy(sf, r_id, trash_folder_id, new_name)
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Lobotomized & Banished", "Error": "Corrupted. Layout completely wiped to force action."})
                                     except Exception as lobotomy_err:
                                         results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(lobotomy_err)})
                                 
