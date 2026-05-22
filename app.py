@@ -4,8 +4,8 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator")
-st.markdown("Find the dashboards holding your reports hostage, neutralize the dependencies, and purge your org.")
+st.title("🧨 The Ruthless Report Liberator V2")
+st.markdown("Find the dashboards holding your reports hostage (even in the Recycle Bin), neutralize the dependencies, and purge your org.")
 
 # --- SIDEBAR: AUTHENTICATION ---
 with st.sidebar:
@@ -42,16 +42,15 @@ if 'sf' in st.session_state:
         execute_hunt = st.button("Hunt Dependencies", type="primary", use_container_width=True)
 
     if execute_hunt and search_term:
-        with st.spinner("Scanning for targets..."):
-            # 1. Fetch the Reports
+        with st.spinner("Scanning for targets (including Recycle Bin)..."):
+            # 1. Fetch the Reports (Added OwnerId for Folder tracking)
             is_id = search_term.startswith('00O') and len(search_term) in [15, 18]
             
             if is_id:
-                report_query = f"SELECT Id, Name, DeveloperName FROM Report WHERE Id = '{search_term}'"
+                report_query = f"SELECT Id, Name, DeveloperName, OwnerId FROM Report WHERE Id = '{search_term}'"
             else:
-                # Escape single quotes for SOQL safety
                 safe_term = search_term.replace("'", "\\'")
-                report_query = f"SELECT Id, Name, DeveloperName FROM Report WHERE Name LIKE '%{safe_term}%' LIMIT 20"
+                report_query = f"SELECT Id, Name, DeveloperName, OwnerId FROM Report WHERE Name LIKE '%{safe_term}%' LIMIT 20"
                 
             try:
                 reports = sf.query(report_query).get('records', [])
@@ -70,7 +69,15 @@ if 'sf' in st.session_state:
                 for rep in reports:
                     rep_id = rep['Id']
                     rep_name = rep['Name']
+                    owner_id = rep.get('OwnerId', '')
+                    
                     rep_link = f"https://{base_url}/lightning/r/Report/{rep_id}/view"
+                    
+                    # Determine Folder Routing
+                    if owner_id.startswith('005'):
+                        folder_link = "Private User Folder"
+                    else:
+                        folder_link = f"https://{base_url}/lightning/r/Folder/{owner_id}/view"
                     
                     dash_query = f"""
                         SELECT Id, DashboardId, Dashboard.Title, Dashboard.DeveloperName 
@@ -78,31 +85,32 @@ if 'sf' in st.session_state:
                         WHERE CustomReportId = '{rep_id}'
                     """
                     try:
-                        dash_comps = sf.query(dash_query).get('records', [])
+                        # KEY CHANGE: query_all() forces Salesforce to check the Recycle Bin
+                        dash_comps = sf.query_all(dash_query).get('records', [])
                     except Exception as e:
                         st.error(f"Failed to query Dashboard Components for {rep_name}: {e}")
                         continue
                         
                     if not dash_comps:
-                        # No dependencies - Safe to delete!
                         all_results.append({
                             "Report Name": rep_name,
                             "Report Action": rep_link,
+                            "Folder Link": folder_link,
                             "Status": "🟢 SAFE TO DELETE",
                             "Hostage Dashboard": "None",
                             "Dashboard Action": "N/A",
                             "Component ID": "N/A"
                         })
                     else:
-                        # Hostage situation found
                         for comp in dash_comps:
                             dash_id = comp.get('DashboardId')
-                            dash_title = comp.get('Dashboard', {}).get('Title', 'Unknown Dashboard')
+                            dash_title = comp.get('Dashboard', {}).get('Title', 'Unknown (Likely Deleted)')
                             dash_link = f"https://{base_url}/lightning/r/Dashboard/{dash_id}/view"
                             
                             all_results.append({
                                 "Report Name": rep_name,
                                 "Report Action": rep_link,
+                                "Folder Link": folder_link,
                                 "Status": "🔴 HELD HOSTAGE",
                                 "Hostage Dashboard": dash_title,
                                 "Dashboard Action": dash_link,
@@ -114,7 +122,6 @@ if 'sf' in st.session_state:
                     st.markdown("### 📋 Dependency Battleplan")
                     df_results = pd.DataFrame(all_results)
                     
-                    # Metrics
                     safe_count = len(df_results[df_results['Status'] == '🟢 SAFE TO DELETE'])
                     hostage_count = len(df_results[df_results['Status'] == '🔴 HELD HOSTAGE'])
                     
@@ -124,20 +131,25 @@ if 'sf' in st.session_state:
                     
                     st.markdown("---")
                     
-                    # Slick DataFrame rendering with clickable links
+                    # Apply Link columns conditionally
+                    col_config = {
+                        "Report Action": st.column_config.LinkColumn("Report Link", display_text="Open Report ↗"),
+                        "Dashboard Action": st.column_config.LinkColumn("Dashboard Link", display_text="Open Dashboard ↗")
+                    }
+                    
+                    # Only make Folder a link if it's not a private text string
+                    if not any(df_results['Folder Link'] == 'Private User Folder'):
+                        col_config["Folder Link"] = st.column_config.LinkColumn("Folder Link", display_text="Open Folder Settings ↗")
+                    
                     st.dataframe(
                         df_results, 
                         use_container_width=True, 
                         hide_index=True,
                         height=min(600, max(150, len(df_results) * 35 + 40)),
-                        column_config={
-                            "Report Action": st.column_config.LinkColumn("Report Link", display_text="Open Report ↗"),
-                            "Dashboard Action": st.column_config.LinkColumn("Dashboard Link", display_text="Open Dashboard ↗")
-                        }
+                        column_config=col_config
                     )
                     
-                    # Fixed indentation: this now sits immediately after the table
-                    st.info("**Ruthless Tip:** Click 'Open Dashboard' next to any 🔴 HELD HOSTAGE report. Edit the dashboard, delete the component referencing your report, save it, and then your report is free to be deleted.")
+                    st.info("**Ruthless Tip:** If a Hostage Dashboard is listed but opening the link gives you an error, that dashboard is in the Recycle Bin! You must empty the org's Recycle Bin to sever the tie.")
 
     # --- THE EXECUTIONER'S BLOCK ---
     st.markdown("---")
@@ -158,9 +170,8 @@ if 'sf' in st.session_state:
         else:
             with st.spinner("Executing direct API deletion..."):
                 try:
-                    # Bypasses the UI and sends a hard DELETE REST call to the record
                     sf.Report.delete(target_id)
                     st.success(f"Target neutralized: {target_id} has been permanently deleted from the system.")
-                    st.balloons() # A little celebration for defeating Noah's mess
+                    st.balloons() 
                 except Exception as e:
                     st.error(f"The API failed to delete the record. Error: {e}")
