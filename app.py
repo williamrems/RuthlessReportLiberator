@@ -5,7 +5,7 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V4")
+st.title("🧨 The Ruthless Report Liberator V5")
 st.markdown("X-Ray the org for Dashboards, Snapshots, FlexiPages, and Layouts holding your reports hostage.")
 
 # --- SIDEBAR: AUTHENTICATION ---
@@ -197,19 +197,21 @@ if 'sf' in st.session_state:
     # --- THE EXECUTIONER'S BLOCK ---
     st.markdown("---")
     st.subheader("🔥 The Executioner's Block")
-    st.markdown("Use this to force-delete reports via the API. If the report is orphaned (broken folder), use the Trojan Horse sequence.")
+    st.markdown("Force-delete reports via the API, restore broken security contexts via Trojan Horse, or banish them to the Quarantine folder forever.")
     
-    col_del1, col_del2 = st.columns([2, 2])
+    col_del1, col_del2 = st.columns([1.5, 2.5])
     with col_del1:
-        target_id = st.text_input("Target Report ID for Force Deletion:", max_chars=18)
+        target_id = st.text_input("Target Report ID for Action:", max_chars=18)
     with col_del2:
         st.write("")
         st.write("")
-        col_btn1, col_btn2 = st.columns(2)
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
-            force_move = st.button("1. Trojan Horse (Move to Public)", use_container_width=True)
+            force_move = st.button("1. Trojan Horse", use_container_width=True)
         with col_btn2:
-            force_delete = st.button("2. Execute Hard Delete", type="primary", use_container_width=True)
+            force_delete = st.button("2. Hard Delete", type="primary", use_container_width=True)
+        with col_btn3:
+            force_quarantine = st.button("3. Quarantine to Island", use_container_width=True)
 
     # ACTION 1: The Trojan Horse (Fixing Orphaned Reports)
     if force_move and target_id:
@@ -224,7 +226,7 @@ if 'sf' in st.session_state:
                     
                     # Force the report into the public folder to restore security context
                     sf.Report.update(target_id, {'OwnerId': org_id})
-                    st.success(f"Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Execute Hard Delete.")
+                    st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                 except Exception as e:
                     st.error(f"Failed to move report. Error: {e}")
 
@@ -240,3 +242,25 @@ if 'sf' in st.session_state:
                     st.balloons() 
                 except Exception as e:
                     st.error(f"The API failed to delete the record. Error: {e}")
+
+    # ACTION 3: The Quarantine (Banish to ZZZDONOTUSETRASH)
+    if force_quarantine and target_id:
+        if not target_id.startswith('00O') or len(target_id) not in [15, 18]:
+            st.error("Invalid Report ID.")
+        else:
+            with st.spinner("Locating Quarantine Island (ZZZDONOTUSETRASH)..."):
+                try:
+                    # Find the exact ID of your trash folder
+                    folder_query = "SELECT Id FROM Folder WHERE DeveloperName = 'ZZZDONOTUSETRASH'"
+                    folder_records = sf.query(folder_query)['records']
+                    
+                    if not folder_records:
+                        st.error("Could not find a folder with the exact API Name 'ZZZDONOTUSETRASH'. Make sure it exists and you have access to it.")
+                    else:
+                        trash_folder_id = folder_records[0]['Id']
+                        
+                        # Move the report to the trash folder
+                        sf.Report.update(target_id, {'OwnerId': trash_folder_id})
+                        st.success(f"Banishment complete. {target_id} has been exiled to the ZZZDONOTUSETRASH folder.")
+                except Exception as e:
+                    st.error(f"Failed to quarantine the report. Error: {e}")
