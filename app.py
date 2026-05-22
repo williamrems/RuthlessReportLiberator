@@ -136,4 +136,31 @@ if 'sf' in st.session_state:
                         }
                     )
                     
+                    # Fixed indentation: this now sits immediately after the table
                     st.info("**Ruthless Tip:** Click 'Open Dashboard' next to any 🔴 HELD HOSTAGE report. Edit the dashboard, delete the component referencing your report, save it, and then your report is free to be deleted.")
+
+    # --- THE EXECUTIONER'S BLOCK ---
+    st.markdown("---")
+    st.subheader("🔥 The Executioner's Block")
+    st.markdown("Use this to force-delete reports via the API when the Salesforce UI is blocked by broken filters, missing divisions, or invalid metadata.")
+    
+    col_del1, col_del2 = st.columns([3, 1])
+    with col_del1:
+        target_id = st.text_input("Target Report ID for Force Deletion:", max_chars=18)
+    with col_del2:
+        st.write("")
+        st.write("")
+        force_delete = st.button("Execute Hard Delete", type="primary", use_container_width=True)
+
+    if force_delete and target_id:
+        if not target_id.startswith('00O') or len(target_id) not in [15, 18]:
+            st.error("Invalid Report ID. Must start with '00O' and be 15 or 18 characters.")
+        else:
+            with st.spinner("Executing direct API deletion..."):
+                try:
+                    # Bypasses the UI and sends a hard DELETE REST call to the record
+                    sf.Report.delete(target_id)
+                    st.success(f"Target neutralized: {target_id} has been permanently deleted from the system.")
+                    st.balloons() # A little celebration for defeating Noah's mess
+                except Exception as e:
+                    st.error(f"The API failed to delete the record. Error: {e}")
