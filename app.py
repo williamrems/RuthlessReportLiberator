@@ -216,14 +216,14 @@ if 'sf' in st.session_state:
         if not target_id.startswith('00O') or len(target_id) not in [15, 18]:
             st.error("Invalid Report ID.")
         else:
-            with st.spinner("Locating Unfiled Public Reports folder..."):
+            with st.spinner("Locating Organization ID..."):
                 try:
-                    # Find the universal public folder
-                    pub_folder_query = "SELECT Id FROM Folder WHERE DeveloperName = 'unfiled$public'"
-                    pub_folder_id = sf.query(pub_folder_query)['records'][0]['Id']
+                    # The absolute true ID of the "Unfiled Public Reports" folder is the Org ID
+                    org_query = "SELECT Id FROM Organization"
+                    org_id = sf.query(org_query)['records'][0]['Id']
                     
                     # Force the report into the public folder to restore security context
-                    sf.Report.update(target_id, {'OwnerId': pub_folder_id})
+                    sf.Report.update(target_id, {'OwnerId': org_id})
                     st.success(f"Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Execute Hard Delete.")
                 except Exception as e:
                     st.error(f"Failed to move report. Error: {e}")
