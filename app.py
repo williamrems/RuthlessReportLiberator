@@ -6,8 +6,8 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V6")
-st.markdown("X-Ray the org for dependencies, force-delete targets, or mass-quarantine legacy garbage.")
+st.title("🧨 The Ruthless Report Liberator V7")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage.")
 
 # --- SIDEBAR: AUTHENTICATION ---
 with st.sidebar:
@@ -23,6 +23,9 @@ with st.sidebar:
                 username=username, password=password, 
                 security_token=security_token, domain=domain
             )
+            # Clear cached folders on fresh connection
+            if 'cached_folders' in st.session_state:
+                del st.session_state['cached_folders']
             st.success("Successfully connected to Salesforce.")
         except Exception as e:
             st.error(f"Connection failed: {e}")
@@ -32,11 +35,11 @@ if 'sf' in st.session_state:
     sf = st.session_state['sf']
     base_url = sf.sf_instance
     
-    # Create the Tab Interface
-    tab1, tab2 = st.tabs(["🎯 Single Target Hunter", "🗑️ Mass Quarantine Island"])
+    # Create the Upgraded Tab Interface
+    tab1, tab2, tab3 = st.tabs(["🎯 Single Target Hunter", "📁 Folder ID Harvester", "🗑️ Mass Quarantine Island"])
     
     # ==========================================
-    # TAB 1: SINGLE TARGET HUNTER (Original V5)
+    # TAB 1: SINGLE TARGET HUNTER
     # ==========================================
     with tab1:
         st.subheader("Target Acquisition")
@@ -217,7 +220,61 @@ if 'sf' in st.session_state:
                     except Exception as e: st.error(f"Failed to quarantine the report via Analytics API. Error: {e}")
 
     # ==========================================
-    # TAB 2: MASS QUARANTINE ISLAND
+    # TAB 2: FOLDER ID HARVESTER (NEW)
+    # ==========================================
+    with tab3:
+        st.subheader("📁 Folder ID Harvester")
+        st.markdown("Select a Report Folder to automatically fetch every Report ID contained inside it. You can copy the raw text output and drop it straight into the Bulk Quarantine Engine tab.")
+        
+        # Pull list of folders if not cached in session state
+        if 'cached_folders' not in st.session_state:
+            with st.spinner("Mapping org folders..."):
+                try:
+                    folder_res = sf.query("SELECT Id, Name, DeveloperName FROM Folder WHERE Type = 'Report' ORDER BY Name ASC")['records']
+                    # Build a structured list for selectbox selection
+                    folder_options = [{"label": f"📦 {f['Name']} ({f['DeveloperName']})", "id": f['Id']} for f in folder_res]
+                    st.session_state['cached_folders'] = folder_options
+                except Exception as e:
+                    st.error(f"Failed to load folders: {e}")
+                    st.session_state['cached_folders'] = []
+                    
+        folders = st.session_state.get('cached_folders', [])
+        
+        if folders:
+            # Dropdown options layout
+            folder_map = {f['label']: f['id'] for f in folders}
+            selected_folder_label = st.selectbox("Select Target Report Folder to Scan:", list(folder_map.keys()))
+            selected_folder_id = folder_map[selected_folder_label]
+            
+            if st.button("Harvest Report IDs", type="primary"):
+                with st.spinner("Harvesting records..."):
+                    try:
+                        # Grab all reports inside the selected folder
+                        reports_in_folder = sf.query(f"SELECT Id, Name FROM Report WHERE OwnerId = '{selected_folder_id}' ORDER BY Name ASC")['records']
+                        
+                        if not reports_in_folder:
+                            st.warning("This folder is empty or contains no queryable custom reports.")
+                        else:
+                            st.success(f"Successfully harvested {len(reports_in_folder)} report(s) from this folder!")
+                            
+                            # Build data frame for visual display
+                            folder_data = [{"Report Name": r['Name'], "Report ID": r['Id']} for r in reports_in_folder]
+                            st.dataframe(pd.DataFrame(folder_data), use_container_width=True, hide_index=True)
+                            
+                            # Compile raw plain text string of all IDs separated by commas for the next tab
+                            raw_id_list = ", ".join([r['Id'] for r in reports_in_folder])
+                            
+                            st.markdown("### 📋 Copypasta Output")
+                            st.markdown("Copy the text block below and paste it directly into the **Bulk Quarantine Engine** input field:")
+                            st.text_area("Raw ID Text Block:", value=raw_id_list, height=150)
+                            
+                    except Exception as e:
+                        st.error(f"Failed to extract records from folder: {e}")
+        else:
+            st.info("No report folders detected or connection hasn't been established.")
+
+    # ==========================================
+    # TAB 3: MASS QUARANTINE ISLAND
     # ==========================================
     with tab2:
         st.subheader("🗑️ Bulk Quarantine Engine")
