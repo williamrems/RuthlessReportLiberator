@@ -6,7 +6,7 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V11")
+st.title("🧨 The Ruthless Report Liberator V12")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Nuclear Lobotomy.")
 
 # --- REUSABLE NUCLEAR LOBOTOMY ENGINE ---
@@ -20,11 +20,15 @@ def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_na
     
     # 1. Base Format & Columns
     meta["reportFormat"] = "TABULAR"
-    if meta.get("detailColumns") and len(meta["detailColumns"]) > 0:
-        meta["detailColumns"] = [meta["detailColumns"][0]]
+    
+    # Safely handle detailColumns against NoneType returns
+    detail_cols = meta.get("detailColumns")
+    if isinstance(detail_cols, list) and len(detail_cols) > 0:
+        meta["detailColumns"] = [detail_cols[0]]
+    else:
+        meta["detailColumns"] = []
         
     # 2. Obliterate Groupings, Filters, Aggregates, Buckets, and Cross Filters
-    # Explicitly passing empty arrays forces the PATCH merge to delete existing corrupted data.
     meta["groupingsDown"] = []
     meta["groupingsAcross"] = []
     meta["reportFilters"] = []
@@ -44,10 +48,23 @@ def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_na
     for key in keys_to_nuke:
         meta.pop(key, None)
         
-    # 4. Eradicate Broken Standard Filters (e.g., deleted Divisions)
-    # Instead of blanking the value, we rip the entire division dict out of the array.
-    if "standardFilters" in meta:
-        meta["standardFilters"] = [f for f in meta["standardFilters"] if f.get("name") != "division"]
+    # 4. Force-Neutralize the Division Filter
+    # Intercept null returns and force an empty list to prevent iteration crashes
+    std_filters = meta.get("standardFilters")
+    if not isinstance(std_filters, list):
+        std_filters = []
+        
+    division_handled = False
+    for f in std_filters:
+        if isinstance(f, dict) and f.get("name") == "division":
+            f["value"] = ""
+            division_handled = True
+            
+    # If the division filter is missing entirely, we inject a blank one to force the overwrite
+    if not division_handled:
+        std_filters.append({"name": "division", "value": ""})
+        
+    meta["standardFilters"] = std_filters
                 
     # Apply quarantine targets
     meta["folderId"] = target_folder_id
