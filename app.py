@@ -6,73 +6,57 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V12")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Nuclear Lobotomy.")
+st.title("🧨 The Ruthless Report Liberator V13")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or execute multi-vector quarantines on corrupted legacy garbage.")
 
-# --- REUSABLE NUCLEAR LOBOTOMY ENGINE ---
-def execute_nuclear_lobotomy(sf_instance, report_id, target_folder_id, target_name=None):
+# --- MULTI-VECTOR ATTACK ENGINES ---
+def force_move(sf_instance, report_id, target_folder_id):
     """
-    Obliterates all complex metadata from a corrupted report to bypass schema validation
-    and forces it into a target folder.
+    Attempts to move the report bypassing the Analytics compiler using multiple API vectors.
     """
-    raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
-    meta = raw_report.get("reportMetadata", {})
-    
-    # 1. Base Format & Columns
-    meta["reportFormat"] = "TABULAR"
-    
-    # Safely handle detailColumns against NoneType returns
-    detail_cols = meta.get("detailColumns")
-    if isinstance(detail_cols, list) and len(detail_cols) > 0:
-        meta["detailColumns"] = [detail_cols[0]]
-    else:
-        meta["detailColumns"] = []
+    # Vector 1: Standard Object API (Lightning UI Bypass)
+    try:
+        sf_instance.Report.update(report_id, {"OwnerId": target_folder_id})
+        return True, "SObject API"
+    except Exception:
+        pass
         
-    # 2. Obliterate Groupings, Filters, Aggregates, Buckets, and Cross Filters
-    meta["groupingsDown"] = []
-    meta["groupingsAcross"] = []
-    meta["reportFilters"] = []
-    meta["crossFilters"] = []
-    meta["buckets"] = []
-    meta["aggregates"] = []
-    
-    # 3. Purge invalid keys
-    keys_to_nuke = [
-        "reportBooleanFilter",
-        "customSummaryFormula",
-        "customSummaryFormulas",
-        "customDetailFormulas",
-        "reportChart",
-        "chart"
-    ]
-    for key in keys_to_nuke:
-        meta.pop(key, None)
+    # Vector 2: Tooling API Bypass
+    try:
+        sf_instance.toolingexecute(f"sobjects/Report/{report_id}", method="PATCH", json={"OwnerId": target_folder_id})
+        return True, "Tooling API"
+    except Exception:
+        pass
         
-    # 4. Force-Neutralize the Division Filter
-    # Intercept null returns and force an empty list to prevent iteration crashes
-    std_filters = meta.get("standardFilters")
-    if not isinstance(std_filters, list):
-        std_filters = []
+    # Vector 3: Analytics API (Strict Compilation)
+    try:
+        sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": {"folderId": target_folder_id}})
+        return True, "Analytics API"
+    except Exception as e:
+        raise Exception(f"All move vectors rejected. Final error: {e}")
+
+def force_rename(sf_instance, report_id, target_name):
+    """
+    Attempts to rename the report silently across multiple vectors.
+    Returns True if successful, False if totally locked by schema corruption.
+    """
+    try:
+        sf_instance.Report.update(report_id, {"Name": target_name})
+        return True
+    except Exception:
+        pass
         
-    division_handled = False
-    for f in std_filters:
-        if isinstance(f, dict) and f.get("name") == "division":
-            f["value"] = ""
-            division_handled = True
-            
-    # If the division filter is missing entirely, we inject a blank one to force the overwrite
-    if not division_handled:
-        std_filters.append({"name": "division", "value": ""})
+    try:
+        sf_instance.toolingexecute(f"sobjects/Report/{report_id}", method="PATCH", json={"Name": target_name})
+        return True
+    except Exception:
+        pass
         
-    meta["standardFilters"] = std_filters
-                
-    # Apply quarantine targets
-    meta["folderId"] = target_folder_id
-    if target_name:
-        meta["name"] = target_name
-        
-    # Push the strict, schema-compliant empty shell to the server
-    sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
+    try:
+        sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": {"name": target_name}})
+        return True
+    except Exception:
+        return False
 
 # --- SIDEBAR: AUTHENTICATION ---
 with st.sidebar:
@@ -230,30 +214,25 @@ if 'sf' in st.session_state:
             st.write("")
             col_btn1, col_btn2, col_btn3 = st.columns(3)
             with col_btn1:
-                force_move = st.button("1. Trojan Horse", use_container_width=True)
+                exec_move = st.button("1. Trojan Horse", use_container_width=True)
             with col_btn2:
-                force_delete = st.button("2. Hard Delete", type="primary", use_container_width=True)
+                exec_delete = st.button("2. Hard Delete", type="primary", use_container_width=True)
             with col_btn3:
-                force_quarantine = st.button("3. Quarantine to Island", use_container_width=True)
+                exec_quarantine = st.button("3. Quarantine to Island", use_container_width=True)
 
-        if force_move and target_id:
+        if exec_move and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
             else:
                 with st.spinner("Locating Organization ID..."):
                     try:
                         org_id = sf.query("SELECT Id FROM Organization")['records'][0]['Id']
-                        # POLITE ATTEMPT FIRST
-                        payload = {"reportMetadata": {"folderId": org_id}}
-                        sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
-                        st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
-                    except Exception:
-                        # NUCLEAR ESCALATION
-                        try:
-                            execute_nuclear_lobotomy(sf, target_id, org_id)
-                            st.success("Trojan Horse successful via Nuclear Lobotomy. Broken layout wiped to force move.")
-                        except Exception as e: st.error(f"Total failure on Trojan Horse. Error: {e}")
+                        move_success, vector = force_move(sf, target_id, org_id)
+                        if move_success:
+                            st.success(f"Trojan Horse successful via {vector}! Report moved to Unfiled Public Reports. Now click Hard Delete.")
+                    except Exception as e: 
+                        st.error(f"Total failure on Trojan Horse move. Error: {e}")
 
-        if force_delete and target_id:
+        if exec_delete and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
             else:
                 with st.spinner("Executing direct API deletion..."):
@@ -263,10 +242,10 @@ if 'sf' in st.session_state:
                         st.balloons() 
                     except Exception as e: st.error(f"The API failed to delete the record. Error: {e}")
 
-        if force_quarantine and target_id:
+        if exec_quarantine and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
             else:
-                with st.spinner("Executing Quarantine..."):
+                with st.spinner("Executing Multi-Vector Quarantine..."):
                     try:
                         folder_records = sf.query("SELECT Id FROM Folder WHERE DeveloperName = 'ZZZDONOTUSETRASH'")['records']
                         if not folder_records: st.error("Could not find folder API Name 'ZZZDONOTUSETRASH'.")
@@ -274,19 +253,17 @@ if 'sf' in st.session_state:
                             trash_folder_id = folder_records[0]['Id']
                             new_name = f"DEAD REPORT - {target_id}"[:40] 
                             
-                            # POLITE ATTEMPT FIRST
                             try:
-                                payload = {"reportMetadata": {"folderId": trash_folder_id, "name": new_name}}
-                                sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
-                                st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
-                            except Exception:
-                                # NUCLEAR ESCALATION
-                                try:
-                                    execute_nuclear_lobotomy(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Nuclear Lobotomy. Corrupt schema was wiped to force the rename and move.")
-                                except Exception as e:
-                                    st.error(f"Total Quarantine Failure. Error: {e}")
-                    except Exception as e: st.error(f"Failed to quarantine. Error: {e}")
+                                move_success, vector = force_move(sf, target_id, trash_folder_id)
+                                if move_success:
+                                    rename_success = force_rename(sf, target_id, new_name)
+                                    if rename_success:
+                                        st.success(f"Banishment complete via {vector}. {target_id} has been exiled and renamed.")
+                                    else:
+                                        st.warning(f"Banishment complete via {vector}. {target_id} is in the island folder, but corrupt schema blocked the rename action.")
+                            except Exception as move_err:
+                                st.error(f"Total Quarantine Failure. Report could not be moved: {move_err}")
+                    except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
 
     # ==========================================
     # TAB 2: FOLDER ID HARVESTER
@@ -332,8 +309,8 @@ if 'sf' in st.session_state:
         st.markdown("""
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
-        2. Attempt standard Analytics API move and rename.
-        3. If blocked by validation errors, the **Nuclear Lobotomy** will wipe the report structure completely blank to force the process through.
+        2. Bypass the Analytics compiler to isolate the report move logic via Multi-Vector execution.
+        3. Only if the move succeeds, execute a decoupled rename attempt. Failed renames are ignored to guarantee banishment.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -360,18 +337,16 @@ if 'sf' in st.session_state:
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
                                 new_name = f"DEAD REPORT - {r_id}"[:40]
                                 
-                                # STEP 1: Polite Standard Method
                                 try:
-                                    payload = {"reportMetadata": {"name": new_name, "folderId": trash_folder_id}}
-                                    sf.restful(f"analytics/reports/{r_id}", method="PATCH", json=payload)
-                                    results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
-                                except Exception:
-                                    # STEP 2: The Nuclear Lobotomy Escalation
-                                    try:
-                                        execute_nuclear_lobotomy(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Lobotomized & Banished", "Error": "Corrupted. Layout completely wiped to force action."})
-                                    except Exception as lobotomy_err:
-                                        results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(lobotomy_err)})
+                                    move_success, vector = force_move(sf, r_id, trash_folder_id)
+                                    if move_success:
+                                        rename_success = force_rename(sf, r_id, new_name)
+                                        if rename_success:
+                                            results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": f"Moved via {vector}"})
+                                        else:
+                                            results.append({"Report ID": r_id, "Status": "⚠️ Banished (Rename Locked)", "Error": f"Moved via {vector}. Corrupt schema blocked rename."})
+                                except Exception as move_err:
+                                    results.append({"Report ID": r_id, "Status": "❌ Move Failed", "Error": str(move_err)})
                                 
                                 progress_bar.progress((i + 1) / len(unique_ids))
                                 
