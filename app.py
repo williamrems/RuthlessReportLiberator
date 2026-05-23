@@ -7,14 +7,14 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V21")
+st.title("🧨 The Ruthless Report Liberator V22")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Brute-Force Mimic Engine.")
 
 # --- BRUTE-FORCE MIMIC ENGINE ---
 def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_name):
     """
     Converts the payload to a string to guarantee eradication of corrupt division data,
-    then executes a conditionally synchronized purge of BucketFields to prevent parser paradoxes.
+    then unconditionally zeroes out formulas to prevent dependency paradoxes.
     """
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
@@ -26,33 +26,39 @@ def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_na
     meta_str = meta_str.replace("Granger", "Baldwin")
     meta = json.loads(meta_str)
     
-    # 2. Conditionally Synchronized Purge
-    # Only modify keys if they already exist to avoid JSON_PARSER_ERRORs from unexpected properties.
+    # 2. Unconditional Formula & Bucket Wipe
+    # We do not conditionally parse these. If they exist, they are wiped to zero. 
+    # This prevents abstract grouping references from crashing the compiler.
     if "buckets" in meta:
         meta["buckets"] = []
         
     if "customSummaryFormulas" in meta:
-        meta["customSummaryFormulas"] = [f for f in meta["customSummaryFormulas"] if "BucketField" not in str(f)]
+        meta["customSummaryFormulas"] = []
         
     if "customDetailFormulas" in meta:
-        meta["customDetailFormulas"] = [f for f in meta["customDetailFormulas"] if "BucketField" not in str(f)]
+        meta["customDetailFormulas"] = []
         
+    # 3. Aggressive Dependency Scrub
+    # Strip out any column, sort, or grouping that references a bucket OR a formula
     list_keys_to_scrub = ["detailColumns", "groupingsDown", "groupingsAcross", "sortBy", "aggregates"]
     for key in list_keys_to_scrub:
         if key in meta and isinstance(meta[key], list):
-            meta[key] = [item for item in meta[key] if "BucketField" not in str(item)]
+            meta[key] = [
+                item for item in meta[key] 
+                if "BucketField" not in str(item) and "FORMULA" not in str(item)
+            ]
             
-    # 3. Prevent Chart Axis Errors
-    # If a chart relies on a bucket we just deleted, the API will reject the save.
+    # 4. Prevent Chart Axis Errors
+    # If a chart relies on a bucket or formula we just deleted, the API will reject the save.
     meta.pop("reportChart", None)
     meta.pop("chart", None)
     meta.pop("hasChart", None)
             
-    # 4. Update the quarantine targets
+    # 5. Update the quarantine targets
     meta["folderId"] = target_folder_id
     meta["name"] = target_name
         
-    # 5. Push the healed schema back to the server
+    # 6. Push the healed schema back to the server
     sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
