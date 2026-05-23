@@ -7,7 +7,7 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V31")
+st.title("🧨 The Ruthless Report Liberator V32")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, mass-quarantine legacy garbage, and sever zombie dashboard links.")
 
 # === HARDCODED KILL LIST ===
@@ -615,9 +615,9 @@ if 'sf' in st.session_state:
                         
                         # 2. Fetch Reports based on scope
                         if "TRASH" in audit_type:
-                            query_reports = "SELECT Id, Name, Folder.Name FROM Report WHERE Name LIKE '%TRASH%' OR Name LIKE '%DEAD REPORT%'"
+                            query_reports = "SELECT Id, Name, FolderName FROM Report WHERE Name LIKE '%TRASH%' OR Name LIKE '%DEAD REPORT%'"
                         else:
-                            query_reports = "SELECT Id, Name, Folder.Name FROM Report"
+                            query_reports = "SELECT Id, Name, FolderName FROM Report"
                             
                         reports = sf.query_all(query_reports)['records']
                         
@@ -625,9 +625,9 @@ if 'sf' in st.session_state:
                             st.success("No reports found matching the criteria.")
                         else:
                             df_reports = pd.DataFrame(reports)
-                            df_reports['Folder Name'] = df_reports['Folder'].apply(lambda x: x['Name'] if x else 'Private/Unfiled')
-                            df_reports = df_reports.drop(columns=['Folder', 'attributes'])
-                            df_reports = df_reports.rename(columns={'Id': 'ReportId', 'Name': 'Report Name'})
+                            df_reports = df_reports.rename(columns={'Id': 'ReportId', 'Name': 'Report Name', 'FolderName': 'Folder Name'})
+                            if 'attributes' in df_reports.columns:
+                                df_reports = df_reports.drop(columns=['attributes'])
                             df_reports['MergeId'] = df_reports['ReportId'].str[:15]
                             
                             # 3. Fast Matrix Merge
