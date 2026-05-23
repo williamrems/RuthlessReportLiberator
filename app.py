@@ -7,8 +7,8 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V32")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, mass-quarantine legacy garbage, and sever zombie dashboard links.")
+st.title("🧨 The Ruthless Report Liberator V33")
+st.markdown("X-Ray the org for dependencies, mass-quarantine legacy garbage, sever zombie links, and execute ghost dashboards.")
 
 # === HARDCODED KILL LIST ===
 DEAD_DIVISIONS = [
@@ -32,7 +32,7 @@ def clean_report_json(raw_dict):
         # 1. Replace the exact raw string
         meta_str = meta_str.replace(bad_div, "Baldwin")
         
-        # 2. Replace the URL-encoded comma variant (e.g., Tulsa%2C OK)
+        # 2. Replace the URL-encoded comma variant
         encoded_div = bad_div.replace(",", "%2C")
         meta_str = meta_str.replace(encoded_div, "Baldwin")
         
@@ -96,13 +96,14 @@ if 'sf' in st.session_state:
     sf = st.session_state['sf']
     base_url = sf.sf_instance
     
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🎯 Single Target Hunter", 
-        "📁 Folder ID Harvester", 
-        "🗑️ Mass Quarantine Island", 
+        "📁 Folder Harvester", 
+        "🗑️ Quarantine Island", 
         "🪹 Empty Report Folders", 
         "📊 Empty Dashboard Folders",
-        "🧟 Zombie Dashboard Hunter"
+        "🧟 Zombie Hunter",
+        "👻 Ghost Dashboard Slayer"
     ])
     
     # ==========================================
@@ -291,6 +292,7 @@ if 'sf' in st.session_state:
                             
                             # PHASE 1: ISOLATED MOVE
                             move_success = False
+                            error_log = ""
                             try:
                                 sf.Report.update(target_id, {"OwnerId": trash_folder_id})
                                 move_success = True
@@ -302,7 +304,7 @@ if 'sf' in st.session_state:
                                     sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
                                     move_success = True
                                 except Exception as e:
-                                    st.error(f"Phase 1 Failure: Report could not be moved to the folder. Error: {e}")
+                                    error_log = f"Move strictly locked by Salesforce. Error: {e}"
 
                             # PHASE 2: DECOUPLED RENAME & GUT
                             if move_success:
@@ -319,6 +321,8 @@ if 'sf' in st.session_state:
                                         st.warning(f"Banishment complete via Gut Engine. {target_id} moved and renamed.")
                                     except Exception as e:
                                         st.warning(f"Partial Banishment. {target_id} was successfully moved to the island folder, but structural corruption blocked the rename operation. It is contained.")
+                            else:
+                                st.error(f"Phase 1 Failure: Report could not be moved to the folder. {error_log}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
 
     # ==========================================
@@ -366,7 +370,7 @@ if 'sf' in st.session_state:
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
         2. Execute an **Isolated Move** to guarantee the report reaches the island folder.
-        3. Only after confirming the move, execute a **Decoupled Rename & Gut**. If the report schema completely locks down the rename, it remains safely contained on the island.
+        3. Only after confirming the move, execute a **Decoupled Rename & Gut**.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -443,7 +447,7 @@ if 'sf' in st.session_state:
     # ==========================================
     with tab4:
         st.subheader("🪹 Empty Report Folder Radar")
-        st.markdown("Scan your org's Report Folders to identify empty directories. Recursively counts all nested contents. *Note: Zeros will automatically float to the top.*")
+        st.markdown("Scan your org's Report Folders to identify empty directories. Recursively counts all nested contents.")
         
         if st.button("Run Report Folder Audit", type="primary"):
             with st.spinner("Mapping folders and calculating recursive rollups..."):
@@ -501,7 +505,7 @@ if 'sf' in st.session_state:
                         df_folders = df_folders.sort_values(by="Total Nested Reports", ascending=True)
                         
                         empty_count = len(df_folders[df_folders['Total Nested Reports'] == 0])
-                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty folders (including subfolders).")
+                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty folders.")
 
                         col_config = {
                             "Folder Link": st.column_config.LinkColumn("Action", display_text="Open Folder ↗")
@@ -516,7 +520,7 @@ if 'sf' in st.session_state:
     # ==========================================
     with tab5:
         st.subheader("📊 Empty Dashboard Folder Radar")
-        st.markdown("Scan your org's Dashboard Folders to identify empty directories. Recursively counts all nested contents. *Note: Zeros will automatically float to the top.*")
+        st.markdown("Scan your org's Dashboard Folders to identify empty directories. Recursively counts all nested contents.")
         
         if st.button("Run Dashboard Folder Audit", type="primary"):
             with st.spinner("Mapping dashboard folders and calculating recursive rollups..."):
@@ -574,7 +578,7 @@ if 'sf' in st.session_state:
                         df_folders = df_folders.sort_values(by="Total Nested Dashboards", ascending=True)
                         
                         empty_count = len(df_folders[df_folders['Total Nested Dashboards'] == 0])
-                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty dashboard folders (including subfolders).")
+                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty dashboard folders.")
 
                         col_config = {
                             "Folder Link": st.column_config.LinkColumn("Action", display_text="Open Folder ↗")
@@ -589,7 +593,7 @@ if 'sf' in st.session_state:
     # ==========================================
     with tab6:
         st.subheader("🧟 Zombie Dashboard Hunter")
-        st.markdown("Cross-reference all dashboards against your quarantined reports to find out which ones are holding your trash hostage. Break these links to enable hard deletion.")
+        st.markdown("Cross-reference all dashboards against your quarantined reports to find out which ones are holding your trash hostage. Output the results to CSV.")
         
         col_z1, col_z2 = st.columns([3, 1])
         with col_z1:
@@ -613,7 +617,7 @@ if 'sf' in st.session_state:
                         df_dash = df_dash.drop(columns=['Dashboard', 'attributes'])
                         df_dash['MergeId'] = df_dash['CustomReportId'].str[:15]
                         
-                        # 2. Fetch Reports based on scope
+                        # 2. Fetch Reports based on scope using flat FolderName
                         if "TRASH" in audit_type:
                             query_reports = "SELECT Id, Name, FolderName FROM Report WHERE Name LIKE '%TRASH%' OR Name LIKE '%DEAD REPORT%'"
                         else:
@@ -649,5 +653,112 @@ if 'sf' in st.session_state:
                                     "Report Link": st.column_config.LinkColumn("Report Action", display_text="View Report ↗")
                                 }
                                 st.dataframe(final_cols, use_container_width=True, hide_index=True, column_config=col_config)
+                                
+                                # Add CSV Export
+                                csv_zombie = final_cols.to_csv(index=False).encode('utf-8')
+                                st.download_button(
+                                    label="Download Matrix as CSV",
+                                    data=csv_zombie,
+                                    file_name="zombie_dashboards.csv",
+                                    mime="text/csv",
+                                    use_container_width=True
+                                )
                 except Exception as e:
                     st.error(f"System error during audit: {e}")
+
+    # ==========================================
+    # TAB 7: GHOST DASHBOARD SLAYER
+    # ==========================================
+    with tab7:
+        st.subheader("👻 Ghost Dashboard Slayer")
+        st.markdown("Hunt down and eradicate dashboards that are locked because their Running User was deactivated. Output the results to a CSV or mass-delete them entirely.")
+        
+        if st.button("Scan for Ghost Dashboards", type="primary"):
+            with st.spinner("Cross-referencing dashboards against inactive user records..."):
+                try:
+                    # 1. Fetch Dashboards with valid running users
+                    dashboards = sf.query_all("SELECT Id, Title, FolderName, RunningUserId FROM Dashboard WHERE RunningUserId != null")['records']
+                    
+                    # 2. Fetch inactive users
+                    inactive_users = sf.query_all("SELECT Id, Name FROM User WHERE IsActive = False")['records']
+                    
+                    if not dashboards or not inactive_users:
+                        st.success("No ghost dashboards found.")
+                    else:
+                        df_dash = pd.DataFrame(dashboards)
+                        df_users = pd.DataFrame(inactive_users)
+                        
+                        df_dash = df_dash.rename(columns={'Id': 'DashboardId', 'Title': 'Dashboard Name', 'FolderName': 'Folder Name'})
+                        df_users = df_users.rename(columns={'Id': 'RunningUserId', 'Name': 'Inactive User Name'})
+                        
+                        df_dash = df_dash.drop(columns=['attributes'], errors='ignore')
+                        df_users = df_users.drop(columns=['attributes'], errors='ignore')
+                        
+                        # Truncate IDs to 15 characters to ensure a bulletproof merge
+                        df_dash['MergeUserId'] = df_dash['RunningUserId'].str[:15]
+                        df_users['MergeUserId'] = df_users['RunningUserId'].str[:15]
+                        
+                        ghost_matrix = pd.merge(df_dash, df_users, on='MergeUserId', how='inner')
+                        
+                        if ghost_matrix.empty:
+                            st.success("Audit complete! No dashboards are held hostage by inactive users.")
+                        else:
+                            st.warning(f"Found {len(ghost_matrix)} Ghost Dashboard(s).")
+                            ghost_matrix['Dashboard Link'] = ghost_matrix['DashboardId'].apply(lambda x: f"https://{base_url}/lightning/r/Dashboard/{x}/view")
+                            
+                            display_cols = ghost_matrix[['Dashboard Name', 'Folder Name', 'Inactive User Name', 'DashboardId', 'Dashboard Link']]
+                            
+                            col_config = {
+                                "Dashboard Link": st.column_config.LinkColumn("Action", display_text="View Dashboard ↗")
+                            }
+                            st.dataframe(display_cols, use_container_width=True, hide_index=True, column_config=col_config)
+                            
+                            # Add CSV Export
+                            csv_ghosts = display_cols.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label="Download Ghost Dashboards as CSV", 
+                                data=csv_ghosts, 
+                                file_name="ghost_dashboards.csv", 
+                                mime="text/csv", 
+                                use_container_width=True
+                            )
+                            
+                            raw_dash_ids = ", ".join(ghost_matrix['DashboardId'].tolist())
+                            st.markdown("### 📋 Copypasta Output for Deletion")
+                            st.text_area("Raw Dashboard IDs:", value=raw_dash_ids, height=100)
+                            
+                except Exception as e:
+                    st.error(f"System error during ghost audit: {e}")
+
+        st.markdown("---")
+        st.subheader("🔥 Ghost Dashboard Executioner")
+        st.markdown("Paste raw Dashboard IDs below to hard delete them from the system.")
+        ghost_ids_input = st.text_area("Paste Dashboard IDs to delete (comma separated):", height=100)
+        
+        if st.button("Execute Mass Dashboard Deletion", type="primary"):
+            if ghost_ids_input:
+                # Dashboard prefix is 01Z
+                raw_dash_ids = re.findall(r'01Z[a-zA-Z0-9]{12,15}', ghost_ids_input) 
+                unique_dash_ids = list(set(raw_dash_ids))
+                
+                if not unique_dash_ids:
+                    st.warning("No valid Dashboard IDs found. Make sure they start with '01Z'.")
+                else:
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    results = []
+                    
+                    for i, d_id in enumerate(unique_dash_ids):
+                        status_text.text(f"Deleting {i+1} of {len(unique_dash_ids)}: {d_id}...")
+                        try:
+                            sf.Dashboard.delete(d_id)
+                            results.append({"Dashboard ID": d_id, "Status": "✅ Deleted"})
+                        except Exception as e:
+                            results.append({"Dashboard ID": d_id, "Status": "❌ Failed", "Error": str(e)})
+                            
+                        progress_bar.progress((i + 1) / len(unique_dash_ids))
+                        
+                    status_text.text("Mass Deletion Complete.")
+                    st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+            else:
+                st.warning("Please paste some IDs first.")
