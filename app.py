@@ -7,55 +7,40 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V25")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Scorched Earth Engine.")
+st.title("🧨 The Ruthless Report Liberator V26")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Atomic Decoupling.")
 
-# === SCORCHED EARTH ENGINE ===
-def execute_scorched_earth(sf_instance, report_id, target_folder_id, target_name):
+# === ATOMIC HELPER FUNCTIONS ===
+def clean_report_json(raw_dict):
     """
-    Abandons all attempts to preserve metadata. Extracts only the bare survival requirements
-    and overwrites the corrupted report with a completely empty tabular shell.
+    Brute-force replaces corrupted division strings to bypass initial JSON validation.
     """
-    raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
-    old_meta = raw_report.get("reportMetadata", {})
-    
-    # 1. Build a brand new, stripped-to-the-bone tabular shell
-    new_meta = {
-        "name": target_name,
-        "folderId": target_folder_id,
-        "reportFormat": "TABULAR",
-        "reportType": old_meta.get("reportType"),
-        "detailColumns": []
-    }
-    
-    # 2. Preserve only the mandatory date constraints
-    if "standardDateFilter" in old_meta:
-        new_meta["standardDateFilter"] = old_meta["standardDateFilter"]
+    meta_str = json.dumps(raw_dict)
+    meta_str = meta_str.replace("Granger, IA", "Baldwin")
+    meta_str = meta_str.replace("Granger%2C IA", "Baldwin")
+    meta_str = meta_str.replace("Granger", "Baldwin")
+    return json.loads(meta_str)
+
+def gut_report_metadata(meta):
+    """
+    Surgically removes buckets and formulas to prevent dependency paradoxes during rename.
+    """
+    if "buckets" in meta: 
+        meta["buckets"] = []
+    if "customSummaryFormulas" in meta: 
+        meta["customSummaryFormulas"] = []
+    if "customDetailFormulas" in meta: 
+        meta["customDetailFormulas"] = []
         
-    # 3. Preserve required standard filters but force the Division fix
-    if "standardFilters" in old_meta:
-        clean_std = []
-        for f in old_meta["standardFilters"]:
-            if isinstance(f, dict):
-                if str(f.get("name", "")).lower() == "division":
-                    f["value"] = "Baldwin"
-                clean_std.append(f)
-        new_meta["standardFilters"] = clean_std
-        
-    # 4. Unconditionally obliterate every other complex array
-    # We only inject the empty array if the key originally existed to prevent JSON parser errors.
-    keys_to_nuke = [
-        "groupingsDown", "groupingsAcross", "sortBy", "aggregates", 
-        "buckets", "customSummaryFormulas", "customDetailFormulas", 
-        "reportFilters", "crossFilters", "historicalSnapshotDates"
-    ]
-    
-    for key in keys_to_nuke:
-        if key in old_meta:
-            new_meta[key] = []
+    list_keys = ["detailColumns", "groupingsDown", "groupingsAcross", "sortBy", "aggregates"]
+    for k in list_keys:
+        if k in meta and isinstance(meta[k], list):
+            meta[k] = [x for x in meta[k] if "BucketField" not in str(x) and "FORMULA" not in str(x)]
             
-    # 5. Push the completely empty shell back to the server to overwrite the corruption
-    sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": new_meta})
+    meta.pop("reportChart", None)
+    meta.pop("chart", None)
+    meta.pop("hasChart", None)
+    return meta
 
 # === SIDEBAR: AUTHENTICATION ===
 with st.sidebar:
@@ -190,7 +175,7 @@ if 'sf' in st.session_state:
                     m1, m2 = st.columns(2)
                     m1.metric("Reports Clean of Direct Links", clean_count)
                     m2.metric("Dependencies Found", len(df_results) - clean_count)
-                    st.markdown("===")
+                    st.markdown("---")
                     
                     col_config = {
                         "Report Action": st.column_config.LinkColumn("Report Link", display_text="Open Report ↗"),
@@ -201,8 +186,10 @@ if 'sf' in st.session_state:
                     
                     st.dataframe(df_results, use_container_width=True, hide_index=True, column_config=col_config)
 
-        # === THE EXECUTIONER'S BLOCK ===
-        st.markdown("===")
+        # ==========================================
+        # THE EXECUTIONER'S BLOCK
+        # ==========================================
+        st.markdown("---")
         st.subheader("🔥 The Executioner's Block")
         
         col_del1, col_del2 = st.columns([1.5, 2.5])
@@ -222,19 +209,28 @@ if 'sf' in st.session_state:
         if exec_move and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
             else:
-                with st.spinner("Locating Organization ID..."):
+                with st.spinner("Locating Organization ID and executing move..."):
                     try:
                         org_id = sf.query("SELECT Id FROM Organization")['records'][0]['Id']
+                        move_success = False
+                        
                         try:
-                            payload = {"reportMetadata": {"folderId": org_id}}
-                            sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
-                            st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
+                            sf.Report.update(target_id, {"OwnerId": org_id})
+                            move_success = True
                         except Exception:
-                            existing_name = f"DEAD REPORT - TRASH - {target_id}"[:40]
-                            execute_scorched_earth(sf, target_id, org_id, existing_name)
-                            st.success("Trojan Horse successful via Scorched Earth. Schema obliterated to force move.")
+                            try:
+                                raw_report = sf.restful(f"analytics/reports/{target_id}")
+                                meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                meta["folderId"] = org_id
+                                sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
+                                move_success = True
+                            except Exception as e:
+                                st.error(f"Total failure on isolated move. Error: {e}")
+                                
+                        if move_success:
+                            st.success("Trojan Horse isolated move successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                     except Exception as e: 
-                        st.error(f"Total failure on Trojan Horse move. Error: {e}")
+                        st.error(f"Failed to query Org ID. Error: {e}")
 
         if exec_delete and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
@@ -249,7 +245,7 @@ if 'sf' in st.session_state:
         if exec_quarantine and target_id:
             if not target_id.startswith('00O') or len(target_id) not in [15, 18]: st.error("Invalid Report ID.")
             else:
-                with st.spinner("Executing Quarantine..."):
+                with st.spinner("Executing Atomic Quarantine..."):
                     try:
                         folder_records = sf.query("SELECT Id FROM Folder WHERE DeveloperName = 'ZZZDONOTUSETRASH'")['records']
                         if not folder_records: st.error("Could not find folder API Name 'ZZZDONOTUSETRASH'.")
@@ -257,16 +253,36 @@ if 'sf' in st.session_state:
                             trash_folder_id = folder_records[0]['Id']
                             new_name = f"DEAD REPORT - TRASH - {target_id}"[:40] 
                             
+                            # PHASE 1: ISOLATED MOVE
+                            move_success = False
                             try:
-                                payload = {"reportMetadata": {"folderId": trash_folder_id, "name": new_name}}
-                                sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
-                                st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
+                                sf.Report.update(target_id, {"OwnerId": trash_folder_id})
+                                move_success = True
                             except Exception:
                                 try:
-                                    execute_scorched_earth(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Scorched Earth Engine. All internal data was annihilated.")
+                                    raw_report = sf.restful(f"analytics/reports/{target_id}")
+                                    meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                    meta["folderId"] = trash_folder_id
+                                    sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
+                                    move_success = True
                                 except Exception as e:
-                                    st.error(f"Total Quarantine Failure. Report could not be moved: {e}")
+                                    st.error(f"Phase 1 Failure: Report could not be moved to the folder. Error: {e}")
+
+                            # PHASE 2: DECOUPLED RENAME & GUT
+                            if move_success:
+                                try:
+                                    sf.Report.update(target_id, {"Name": new_name})
+                                    st.success(f"Banishment complete. {target_id} successfully moved and renamed.")
+                                except Exception:
+                                    try:
+                                        raw_report = sf.restful(f"analytics/reports/{target_id}")
+                                        meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                        meta = gut_report_metadata(meta)
+                                        meta["name"] = new_name
+                                        sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
+                                        st.warning(f"Banishment complete via Gut Engine. {target_id} moved and renamed.")
+                                    except Exception as e:
+                                        st.warning(f"Partial Banishment. {target_id} was successfully moved to the island folder, but structural corruption blocked the rename operation. It is contained.")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
 
     # ==========================================
@@ -313,8 +329,8 @@ if 'sf' in st.session_state:
         st.markdown("""
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
-        2. Attempt standard Analytics API move and rename.
-        3. If blocked by validation errors, the **Scorched Earth Engine** will mercilessly rip all custom logic from the payload to guarantee a successful rename and move.
+        2. Execute an **Isolated Move** to guarantee the report reaches the island folder.
+        3. Only after confirming the move, execute a **Decoupled Rename & Gut**. If the report schema completely locks down the rename, it remains safely contained on the island.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -341,16 +357,39 @@ if 'sf' in st.session_state:
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
                                 new_name = f"DEAD REPORT - TRASH - {r_id}"[:40]
                                 
+                                # PHASE 1: ISOLATED MOVE
+                                move_success = False
+                                error_log = ""
                                 try:
-                                    payload = {"reportMetadata": {"name": new_name, "folderId": trash_folder_id}}
-                                    sf.restful(f"analytics/reports/{r_id}", method="PATCH", json=payload)
-                                    results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
+                                    sf.Report.update(r_id, {"OwnerId": trash_folder_id})
+                                    move_success = True
                                 except Exception:
                                     try:
-                                        execute_scorched_earth(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Scorched earth wipe forced action."})
-                                    except Exception as repair_err:
-                                        results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(repair_err)})
+                                        raw_report = sf.restful(f"analytics/reports/{r_id}")
+                                        meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                        meta["folderId"] = trash_folder_id
+                                        sf.restful(f"analytics/reports/{r_id}", method="PATCH", json={"reportMetadata": meta})
+                                        move_success = True
+                                    except Exception as e:
+                                        error_log = f"Move strictly locked by Salesforce. Error: {e}"
+
+                                # PHASE 2: DECOUPLED RENAME & GUT
+                                if move_success:
+                                    try:
+                                        sf.Report.update(r_id, {"Name": new_name})
+                                        results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
+                                    except Exception:
+                                        try:
+                                            raw_report = sf.restful(f"analytics/reports/{r_id}")
+                                            meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                            meta = gut_report_metadata(meta)
+                                            meta["name"] = new_name
+                                            sf.restful(f"analytics/reports/{r_id}", method="PATCH", json={"reportMetadata": meta})
+                                            results.append({"Report ID": r_id, "Status": "✅ Banished, Gutted & Renamed", "Error": ""})
+                                        except Exception as e:
+                                            results.append({"Report ID": r_id, "Status": "⚠️ Banished (Rename Locked)", "Error": "Moved to island, but corrupt schema blocked rename."})
+                                else:
+                                    results.append({"Report ID": r_id, "Status": "❌ Move Failed", "Error": error_log})
                                 
                                 progress_bar.progress((i + 1) / len(unique_ids))
                                 
