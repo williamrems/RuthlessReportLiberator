@@ -7,7 +7,7 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V29")
+st.title("🧨 The Ruthless Report Liberator V30")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, mass-quarantine legacy garbage, and sweep up empty folders.")
 
 # === HARDCODED KILL LIST ===
@@ -96,7 +96,7 @@ if 'sf' in st.session_state:
     sf = st.session_state['sf']
     base_url = sf.sf_instance
     
-    tab1, tab2, tab3, tab4 = st.tabs(["🎯 Single Target Hunter", "📁 Folder ID Harvester", "🗑️ Mass Quarantine Island", "🪹 Empty Folder Radar"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Single Target Hunter", "📁 Folder ID Harvester", "🗑️ Mass Quarantine Island", "🪹 Empty Report Folders", "📊 Empty Dashboard Folders"])
     
     # ==========================================
     # TAB 1: SINGLE TARGET HUNTER
@@ -432,20 +432,19 @@ if 'sf' in st.session_state:
                 st.warning("Please paste some IDs first.")
 
     # ==========================================
-    # TAB 4: EMPTY FOLDER RADAR
+    # TAB 4: EMPTY REPORT FOLDER RADAR
     # ==========================================
     with tab4:
-        st.subheader("🪹 Empty Folder Radar")
+        st.subheader("🪹 Empty Report Folder Radar")
         st.markdown("Scan your org's Report Folders to identify empty directories taking up space and creating clutter. *Note: Zeros will automatically float to the top.*")
         
-        if st.button("Run Folder Audit", type="primary"):
+        if st.button("Run Report Folder Audit", type="primary"):
             with st.spinner("Mapping folders and crunching report counts..."):
                 try:
                     # 1. Grab all Report folders
                     folders = sf.query_all("SELECT Id, Name, DeveloperName FROM Folder WHERE Type = 'Report'")['records']
                     
                     # 2. Grab all report IDs and their Folder IDs (OwnerId)
-                    # We use simple query_all + pandas to avoid hitting Salesforce aggregate query limits on massive orgs
                     reports = sf.query_all("SELECT Id, OwnerId FROM Report")['records']
                     
                     # Count occurrences using Pandas
@@ -458,7 +457,6 @@ if 'sf' in st.session_state:
                     folder_data = []
                     for f in folders:
                         f_id = f['Id']
-                        # Match the OwnerId to the Folder Id. If it's not in the map, it has 0 reports.
                         count = count_map.get(f_id, 0)
                         folder_data.append({
                             "Folder Name": f['Name'],
@@ -471,8 +469,6 @@ if 'sf' in st.session_state:
                         st.info("No custom report folders found in this org.")
                     else:
                         df_folders = pd.DataFrame(folder_data)
-                        
-                        # Sort to force the 0s to the top
                         df_folders = df_folders.sort_values(by="Report Count", ascending=True)
                         
                         empty_count = len(df_folders[df_folders['Report Count'] == 0])
@@ -485,3 +481,54 @@ if 'sf' in st.session_state:
 
                 except Exception as e:
                     st.error(f"Failed to scan folders. Error: {e}")
+
+    # ==========================================
+    # TAB 5: EMPTY DASHBOARD FOLDER RADAR
+    # ==========================================
+    with tab5:
+        st.subheader("📊 Empty Dashboard Folder Radar")
+        st.markdown("Scan your org's Dashboard Folders to identify empty directories. *Note: Zeros will automatically float to the top.*")
+        
+        if st.button("Run Dashboard Folder Audit", type="primary"):
+            with st.spinner("Mapping dashboard folders and crunching counts..."):
+                try:
+                    # 1. Grab all Dashboard folders
+                    folders = sf.query_all("SELECT Id, Name, DeveloperName FROM Folder WHERE Type = 'Dashboard'")['records']
+                    
+                    # 2. Grab all dashboard IDs and their Folder IDs
+                    dashboards = sf.query_all("SELECT Id, FolderId FROM Dashboard")['records']
+                    
+                    # Count occurrences using Pandas
+                    df_dashboards = pd.DataFrame(dashboards)
+                    if not df_dashboards.empty:
+                        count_map = df_dashboards['FolderId'].value_counts().to_dict()
+                    else:
+                        count_map = {}
+
+                    folder_data = []
+                    for f in folders:
+                        f_id = f['Id']
+                        count = count_map.get(f_id, 0)
+                        folder_data.append({
+                            "Folder Name": f['Name'],
+                            "Developer Name": f['DeveloperName'],
+                            "Dashboard Count": count,
+                            "Folder Link": f"https://{base_url}/lightning/r/Folder/{f_id}/view"
+                        })
+
+                    if not folder_data:
+                        st.info("No custom dashboard folders found in this org.")
+                    else:
+                        df_folders = pd.DataFrame(folder_data)
+                        df_folders = df_folders.sort_values(by="Dashboard Count", ascending=True)
+                        
+                        empty_count = len(df_folders[df_folders['Dashboard Count'] == 0])
+                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty dashboard folders.")
+
+                        col_config = {
+                            "Folder Link": st.column_config.LinkColumn("Action", display_text="Open Folder ↗")
+                        }
+                        st.dataframe(df_folders, use_container_width=True, hide_index=True, column_config=col_config)
+
+                except Exception as e:
+                    st.error(f"Failed to scan dashboard folders. Error: {e}")
