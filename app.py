@@ -7,19 +7,41 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V26")
+st.title("🧨 The Ruthless Report Liberator V27")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Atomic Decoupling.")
 
 # === ATOMIC HELPER FUNCTIONS ===
-def clean_report_json(raw_dict):
+def clean_report_json(raw_dict, corrupt_divisions_str):
     """
-    Brute-force replaces corrupted division strings to bypass initial JSON validation.
+    Dynamically hunts down corrupt divisions and their URL-encoded variants
+    to bypass initial JSON validation without playing whack-a-mole in the code.
     """
     meta_str = json.dumps(raw_dict)
-    meta_str = meta_str.replace("Granger, IA", "Baldwin")
-    meta_str = meta_str.replace("Granger%2C IA", "Baldwin")
-    meta_str = meta_str.replace("Granger", "Baldwin")
-    return json.loads(meta_str)
+    
+    # Parse the user's kill list
+    bad_divs = [d.strip() for d in corrupt_divisions_str.split(',') if d.strip()]
+    
+    for bad_div in bad_divs:
+        # 1. Replace the exact raw string
+        meta_str = meta_str.replace(bad_div, "Baldwin")
+        
+        # 2. Replace the URL-encoded comma variant (e.g., Tulsa%2C OK)
+        encoded_div = bad_div.replace(",", "%2C")
+        meta_str = meta_str.replace(encoded_div, "Baldwin")
+        
+        # 3. Replace just the city prefix if it is dangling
+        city_only = bad_div.split(',')[0].strip()
+        meta_str = meta_str.replace(city_only, "Baldwin")
+        
+    meta = json.loads(meta_str)
+    
+    # Force the standard filter just to guarantee compliance
+    if "standardFilters" in meta:
+        for f in meta["standardFilters"]:
+            if isinstance(f, dict) and str(f.get("name", "")).lower() == "division":
+                f["value"] = "Baldwin"
+                
+    return meta
 
 def gut_report_metadata(meta):
     """
@@ -192,6 +214,9 @@ if 'sf' in st.session_state:
         st.markdown("---")
         st.subheader("🔥 The Executioner's Block")
         
+        # Adding the corrupt division list to the single target hunter as well
+        corrupt_divs_single = st.text_input("💀 Known Corrupt Divisions (comma separated):", value="Granger, IA, Tulsa, OK")
+        
         col_del1, col_del2 = st.columns([1.5, 2.5])
         with col_del1:
             target_id = st.text_input("Target Report ID for Action:", max_chars=18)
@@ -220,7 +245,7 @@ if 'sf' in st.session_state:
                         except Exception:
                             try:
                                 raw_report = sf.restful(f"analytics/reports/{target_id}")
-                                meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                meta = clean_report_json(raw_report.get("reportMetadata", {}), corrupt_divs_single)
                                 meta["folderId"] = org_id
                                 sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
                                 move_success = True
@@ -261,7 +286,7 @@ if 'sf' in st.session_state:
                             except Exception:
                                 try:
                                     raw_report = sf.restful(f"analytics/reports/{target_id}")
-                                    meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                    meta = clean_report_json(raw_report.get("reportMetadata", {}), corrupt_divs_single)
                                     meta["folderId"] = trash_folder_id
                                     sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
                                     move_success = True
@@ -276,7 +301,7 @@ if 'sf' in st.session_state:
                                 except Exception:
                                     try:
                                         raw_report = sf.restful(f"analytics/reports/{target_id}")
-                                        meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                        meta = clean_report_json(raw_report.get("reportMetadata", {}), corrupt_divs_single)
                                         meta = gut_report_metadata(meta)
                                         meta["name"] = new_name
                                         sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
@@ -333,6 +358,8 @@ if 'sf' in st.session_state:
         3. Only after confirming the move, execute a **Decoupled Rename & Gut**. If the report schema completely locks down the rename, it remains safely contained on the island.
         """)
         
+        # Add the dynamic kill list UI
+        corrupt_divs_bulk = st.text_input("💀 Known Corrupt Divisions (comma separated):", value="Granger, IA, Tulsa, OK")
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
         
         if st.button("Execute Mass Quarantine", type="primary"):
@@ -366,7 +393,7 @@ if 'sf' in st.session_state:
                                 except Exception:
                                     try:
                                         raw_report = sf.restful(f"analytics/reports/{r_id}")
-                                        meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                        meta = clean_report_json(raw_report.get("reportMetadata", {}), corrupt_divs_bulk)
                                         meta["folderId"] = trash_folder_id
                                         sf.restful(f"analytics/reports/{r_id}", method="PATCH", json={"reportMetadata": meta})
                                         move_success = True
@@ -381,7 +408,7 @@ if 'sf' in st.session_state:
                                     except Exception:
                                         try:
                                             raw_report = sf.restful(f"analytics/reports/{r_id}")
-                                            meta = clean_report_json(raw_report.get("reportMetadata", {}))
+                                            meta = clean_report_json(raw_report.get("reportMetadata", {}), corrupt_divs_bulk)
                                             meta = gut_report_metadata(meta)
                                             meta["name"] = new_name
                                             sf.restful(f"analytics/reports/{r_id}", method="PATCH", json={"reportMetadata": meta})
