@@ -8,7 +8,7 @@ from simple_salesforce import Salesforce
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
 st.title("🧨 The Ruthless Report Liberator V31")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, mass-quarantine legacy garbage, and recursively sweep up empty folders.")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, mass-quarantine legacy garbage, and sever zombie dashboard links.")
 
 # === HARDCODED KILL LIST ===
 DEAD_DIVISIONS = [
@@ -96,7 +96,14 @@ if 'sf' in st.session_state:
     sf = st.session_state['sf']
     base_url = sf.sf_instance
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Single Target Hunter", "📁 Folder ID Harvester", "🗑️ Mass Quarantine Island", "🪹 Empty Report Folders", "📊 Empty Dashboard Folders"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "🎯 Single Target Hunter", 
+        "📁 Folder ID Harvester", 
+        "🗑️ Mass Quarantine Island", 
+        "🪹 Empty Report Folders", 
+        "📊 Empty Dashboard Folders",
+        "🧟 Zombie Dashboard Hunter"
+    ])
     
     # ==========================================
     # TAB 1: SINGLE TARGET HUNTER
@@ -284,7 +291,6 @@ if 'sf' in st.session_state:
                             
                             # PHASE 1: ISOLATED MOVE
                             move_success = False
-                            error_log = ""
                             try:
                                 sf.Report.update(target_id, {"OwnerId": trash_folder_id})
                                 move_success = True
@@ -296,7 +302,7 @@ if 'sf' in st.session_state:
                                     sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
                                     move_success = True
                                 except Exception as e:
-                                    error_log = f"Move strictly locked by Salesforce. Error: {e}"
+                                    st.error(f"Phase 1 Failure: Report could not be moved to the folder. Error: {e}")
 
                             # PHASE 2: DECOUPLED RENAME & GUT
                             if move_success:
@@ -313,8 +319,6 @@ if 'sf' in st.session_state:
                                         st.warning(f"Banishment complete via Gut Engine. {target_id} moved and renamed.")
                                     except Exception as e:
                                         st.warning(f"Partial Banishment. {target_id} was successfully moved to the island folder, but structural corruption blocked the rename operation. It is contained.")
-                            else:
-                                st.error(f"Phase 1 Failure: Report could not be moved to the folder. {error_log}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
 
     # ==========================================
@@ -444,16 +448,12 @@ if 'sf' in st.session_state:
         if st.button("Run Report Folder Audit", type="primary"):
             with st.spinner("Mapping folders and calculating recursive rollups..."):
                 try:
-                    # 1. Grab all Report folders including ParentId
                     folders = sf.query_all("SELECT Id, Name, DeveloperName, ParentId FROM Folder WHERE Type = 'Report'")['records']
-                    
-                    # 2. Grab all report IDs and their Folder IDs (OwnerId)
                     reports = sf.query_all("SELECT Id, OwnerId FROM Report")['records']
                     
                     df_reports = pd.DataFrame(reports)
                     count_map = df_reports['OwnerId'].value_counts().to_dict() if not df_reports.empty else {}
 
-                    # 3. Build structural hierarchy
                     folder_dict = {}
                     for f in folders:
                         folder_dict[f['Id']] = {
@@ -466,13 +466,11 @@ if 'sf' in st.session_state:
                             "Folder Link": f"https://{base_url}/lightning/r/Folder/{f['Id']}/view"
                         }
 
-                    # Link parent to children
                     for f_id, data in folder_dict.items():
                         p_id = data["ParentId"]
                         if p_id and p_id in folder_dict:
                             folder_dict[p_id]["Children"].append(f_id)
 
-                    # 4. Recursive Rollup Algorithm
                     computed = set()
                     def get_rollup(fid):
                         if fid in computed:
@@ -523,16 +521,12 @@ if 'sf' in st.session_state:
         if st.button("Run Dashboard Folder Audit", type="primary"):
             with st.spinner("Mapping dashboard folders and calculating recursive rollups..."):
                 try:
-                    # 1. Grab all Dashboard folders including ParentId
                     folders = sf.query_all("SELECT Id, Name, DeveloperName, ParentId FROM Folder WHERE Type = 'Dashboard'")['records']
-                    
-                    # 2. Grab all dashboard IDs and their Folder IDs
                     dashboards = sf.query_all("SELECT Id, FolderId FROM Dashboard")['records']
                     
                     df_dashboards = pd.DataFrame(dashboards)
                     count_map = df_dashboards['FolderId'].value_counts().to_dict() if not df_dashboards.empty else {}
 
-                    # 3. Build structural hierarchy
                     folder_dict = {}
                     for f in folders:
                         folder_dict[f['Id']] = {
@@ -545,13 +539,11 @@ if 'sf' in st.session_state:
                             "Folder Link": f"https://{base_url}/lightning/r/Folder/{f['Id']}/view"
                         }
 
-                    # Link parent to children
                     for f_id, data in folder_dict.items():
                         p_id = data["ParentId"]
                         if p_id and p_id in folder_dict:
                             folder_dict[p_id]["Children"].append(f_id)
 
-                    # 4. Recursive Rollup Algorithm
                     computed = set()
                     def get_rollup(fid):
                         if fid in computed:
@@ -591,3 +583,71 @@ if 'sf' in st.session_state:
 
                 except Exception as e:
                     st.error(f"Failed to scan dashboard folders. Error: {e}")
+
+    # ==========================================
+    # TAB 6: ZOMBIE DASHBOARD HUNTER
+    # ==========================================
+    with tab6:
+        st.subheader("🧟 Zombie Dashboard Hunter")
+        st.markdown("Cross-reference all dashboards against your quarantined reports to find out which ones are holding your trash hostage. Break these links to enable hard deletion.")
+        
+        col_z1, col_z2 = st.columns([3, 1])
+        with col_z1:
+            audit_type = st.radio("Audit Scope:", ["Show Only TRASH/DEAD REPORTS (Hostage Rescue)", "Map ALL Dashboards to ALL Reports"])
+        with col_z2:
+            st.write("")
+            st.write("")
+            run_zombie = st.button("Run Dependency Audit", type="primary", use_container_width=True)
+            
+        if run_zombie:
+            with st.spinner("Executing bulk cross-reference matrix..."):
+                try:
+                    # 1. Fetch Dashboard Components
+                    dash_comps = sf.query_all("SELECT DashboardId, Dashboard.Title, CustomReportId FROM DashboardComponent WHERE CustomReportId != null")['records']
+                    
+                    if not dash_comps:
+                        st.success("No dashboard components found linked to reports.")
+                    else:
+                        df_dash = pd.DataFrame(dash_comps)
+                        df_dash['Dashboard Name'] = df_dash['Dashboard'].apply(lambda x: x['Title'] if x else 'Unknown')
+                        df_dash = df_dash.drop(columns=['Dashboard', 'attributes'])
+                        df_dash['MergeId'] = df_dash['CustomReportId'].str[:15]
+                        
+                        # 2. Fetch Reports based on scope
+                        if "TRASH" in audit_type:
+                            query_reports = "SELECT Id, Name, Folder.Name FROM Report WHERE Name LIKE '%TRASH%' OR Name LIKE '%DEAD REPORT%'"
+                        else:
+                            query_reports = "SELECT Id, Name, Folder.Name FROM Report"
+                            
+                        reports = sf.query_all(query_reports)['records']
+                        
+                        if not reports:
+                            st.success("No reports found matching the criteria.")
+                        else:
+                            df_reports = pd.DataFrame(reports)
+                            df_reports['Folder Name'] = df_reports['Folder'].apply(lambda x: x['Name'] if x else 'Private/Unfiled')
+                            df_reports = df_reports.drop(columns=['Folder', 'attributes'])
+                            df_reports = df_reports.rename(columns={'Id': 'ReportId', 'Name': 'Report Name'})
+                            df_reports['MergeId'] = df_reports['ReportId'].str[:15]
+                            
+                            # 3. Fast Matrix Merge
+                            df_matrix = pd.merge(df_reports, df_dash, on='MergeId', how='inner')
+                            
+                            if df_matrix.empty:
+                                st.success("Audit complete! No dashboard dependencies found for the targeted reports. You are clear.")
+                            else:
+                                st.warning(f"Found {len(df_matrix)} dependency link(s).")
+                                
+                                df_matrix['Dashboard Link'] = df_matrix['DashboardId'].apply(lambda x: f"https://{base_url}/lightning/r/Dashboard/{x}/view")
+                                df_matrix['Report Link'] = df_matrix['ReportId'].apply(lambda x: f"https://{base_url}/lightning/r/Report/{x}/view")
+                                
+                                final_cols = df_matrix[['Dashboard Name', 'Report Name', 'Folder Name', 'Dashboard Link', 'Report Link']]
+                                final_cols = final_cols.sort_values(by=['Dashboard Name', 'Report Name'])
+                                
+                                col_config = {
+                                    "Dashboard Link": st.column_config.LinkColumn("Dashboard Action", display_text="Edit Dashboard ↗"),
+                                    "Report Link": st.column_config.LinkColumn("Report Action", display_text="View Report ↗")
+                                }
+                                st.dataframe(final_cols, use_container_width=True, hide_index=True, column_config=col_config)
+                except Exception as e:
+                    st.error(f"System error during audit: {e}")
