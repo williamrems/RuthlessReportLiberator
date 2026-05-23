@@ -7,65 +7,57 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V24")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via In-Place Neutralization.")
+st.title("🧨 The Ruthless Report Liberator V25")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Scorched Earth Engine.")
 
-# --- IN-PLACE NEUTRALIZATION ENGINE ---
-def execute_inplace_neutralization(sf_instance, report_id, target_folder_id, target_name):
+# === SCORCHED EARTH ENGINE ===
+def execute_scorched_earth(sf_instance, report_id, target_folder_id, target_name):
     """
-    Converts the payload to a string to eradicate division errors, then executes an 
-    in-place neutralization of Buckets and Formulas to overwrite backend corruption 
-    without triggering PATCH merge paradoxes.
+    Abandons all attempts to preserve metadata. Extracts only the bare survival requirements
+    and overwrites the corrupted report with a completely empty tabular shell.
     """
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
-    meta = raw_report.get("reportMetadata", {})
+    old_meta = raw_report.get("reportMetadata", {})
     
-    # 1. Eradicate Division Errors Globally
-    meta_str = json.dumps(meta)
-    meta_str = meta_str.replace("Granger, IA", "Baldwin")
-    meta_str = meta_str.replace("Granger%2C IA", "Baldwin")
-    meta_str = meta_str.replace("Granger", "Baldwin")
-    meta = json.loads(meta_str)
+    # 1. Build a brand new, stripped-to-the-bone tabular shell
+    new_meta = {
+        "name": target_name,
+        "folderId": target_folder_id,
+        "reportFormat": "TABULAR",
+        "reportType": old_meta.get("reportType"),
+        "detailColumns": []
+    }
     
-    # 2. Identify a Safe Host Column dynamically
-    safe_col = "Id"
-    if meta.get("detailColumns"):
-        for col in meta["detailColumns"]:
-            if "BucketField" not in col and "FORMULA" not in col:
-                safe_col = col
-                break
-                
-    # 3. In-Place Bucket Neutralization
-    # Keep the developerName intact so the server overwrites the broken backend definition.
-    if "buckets" in meta:
-        for bucket in meta["buckets"]:
-            bucket["sourceColumnName"] = safe_col
-            if "values" in bucket:
-                bucket["values"] = []
-                
-    # 4. In-Place Formula Neutralization
-    # Keep the grouping dependencies intact but neutralize the math to prevent calculation errors.
-    if "customSummaryFormulas" in meta:
-        for formula in meta["customSummaryFormulas"]:
-            formula["formula"] = "RowCount"
-            
-    if "customDetailFormulas" in meta:
-        for formula in meta["customDetailFormulas"]:
-            formula["formula"] = "1"
-            
-    # 5. Strip Charts to prevent axis referencing errors on neutralized data
-    meta.pop("reportChart", None)
-    meta.pop("chart", None)
-    meta.pop("hasChart", None)
-            
-    # 6. Update the quarantine targets
-    meta["folderId"] = target_folder_id
-    meta["name"] = target_name
+    # 2. Preserve only the mandatory date constraints
+    if "standardDateFilter" in old_meta:
+        new_meta["standardDateFilter"] = old_meta["standardDateFilter"]
         
-    # 7. Push the healed schema back to the server
-    sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
+    # 3. Preserve required standard filters but force the Division fix
+    if "standardFilters" in old_meta:
+        clean_std = []
+        for f in old_meta["standardFilters"]:
+            if isinstance(f, dict):
+                if str(f.get("name", "")).lower() == "division":
+                    f["value"] = "Baldwin"
+                clean_std.append(f)
+        new_meta["standardFilters"] = clean_std
+        
+    # 4. Unconditionally obliterate every other complex array
+    # We only inject the empty array if the key originally existed to prevent JSON parser errors.
+    keys_to_nuke = [
+        "groupingsDown", "groupingsAcross", "sortBy", "aggregates", 
+        "buckets", "customSummaryFormulas", "customDetailFormulas", 
+        "reportFilters", "crossFilters", "historicalSnapshotDates"
+    ]
+    
+    for key in keys_to_nuke:
+        if key in old_meta:
+            new_meta[key] = []
+            
+    # 5. Push the completely empty shell back to the server to overwrite the corruption
+    sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": new_meta})
 
-# --- SIDEBAR: AUTHENTICATION ---
+# === SIDEBAR: AUTHENTICATION ===
 with st.sidebar:
     st.header("Authentication")
     username = st.text_input("Username")
@@ -85,7 +77,7 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Connection failed: {e}")
 
-# --- MAIN APP ---
+# === MAIN APP ===
 if 'sf' in st.session_state:
     sf = st.session_state['sf']
     base_url = sf.sf_instance
@@ -198,7 +190,7 @@ if 'sf' in st.session_state:
                     m1, m2 = st.columns(2)
                     m1.metric("Reports Clean of Direct Links", clean_count)
                     m2.metric("Dependencies Found", len(df_results) - clean_count)
-                    st.markdown("---")
+                    st.markdown("===")
                     
                     col_config = {
                         "Report Action": st.column_config.LinkColumn("Report Link", display_text="Open Report ↗"),
@@ -209,8 +201,8 @@ if 'sf' in st.session_state:
                     
                     st.dataframe(df_results, use_container_width=True, hide_index=True, column_config=col_config)
 
-        # --- THE EXECUTIONER'S BLOCK ---
-        st.markdown("---")
+        # === THE EXECUTIONER'S BLOCK ===
+        st.markdown("===")
         st.subheader("🔥 The Executioner's Block")
         
         col_del1, col_del2 = st.columns([1.5, 2.5])
@@ -239,8 +231,8 @@ if 'sf' in st.session_state:
                             st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                         except Exception:
                             existing_name = f"DEAD REPORT - TRASH - {target_id}"[:40]
-                            execute_inplace_neutralization(sf, target_id, org_id, existing_name)
-                            st.success("Trojan Horse successful via In-Place Neutralization. Corruption overwritten to force move.")
+                            execute_scorched_earth(sf, target_id, org_id, existing_name)
+                            st.success("Trojan Horse successful via Scorched Earth. Schema obliterated to force move.")
                     except Exception as e: 
                         st.error(f"Total failure on Trojan Horse move. Error: {e}")
 
@@ -271,8 +263,8 @@ if 'sf' in st.session_state:
                                 st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
                             except Exception:
                                 try:
-                                    execute_inplace_neutralization(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via In-Place Neutralization Engine. Corrupt backend definitions were overwritten.")
+                                    execute_scorched_earth(sf, target_id, trash_folder_id, new_name)
+                                    st.warning(f"Banishment complete via Scorched Earth Engine. All internal data was annihilated.")
                                 except Exception as e:
                                     st.error(f"Total Quarantine Failure. Report could not be moved: {e}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
@@ -322,7 +314,7 @@ if 'sf' in st.session_state:
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
         2. Attempt standard Analytics API move and rename.
-        3. If blocked by validation errors, the **In-Place Neutralization Engine** will universally overwrite corrupt Bucket and Formula data to guarantee completion.
+        3. If blocked by validation errors, the **Scorched Earth Engine** will mercilessly rip all custom logic from the payload to guarantee a successful rename and move.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -355,8 +347,8 @@ if 'sf' in st.session_state:
                                     results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
                                 except Exception:
                                     try:
-                                        execute_inplace_neutralization(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "In-Place Neutralization forced action."})
+                                        execute_scorched_earth(sf, r_id, trash_folder_id, new_name)
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Scorched earth wipe forced action."})
                                     except Exception as repair_err:
                                         results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(repair_err)})
                                 
