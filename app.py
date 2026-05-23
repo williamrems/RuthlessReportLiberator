@@ -7,8 +7,8 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V30")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, mass-quarantine legacy garbage, and sweep up empty folders.")
+st.title("🧨 The Ruthless Report Liberator V31")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, mass-quarantine legacy garbage, and recursively sweep up empty folders.")
 
 # === HARDCODED KILL LIST ===
 DEAD_DIVISIONS = [
@@ -284,6 +284,7 @@ if 'sf' in st.session_state:
                             
                             # PHASE 1: ISOLATED MOVE
                             move_success = False
+                            error_log = ""
                             try:
                                 sf.Report.update(target_id, {"OwnerId": trash_folder_id})
                                 move_success = True
@@ -295,7 +296,7 @@ if 'sf' in st.session_state:
                                     sf.restful(f"analytics/reports/{target_id}", method="PATCH", json={"reportMetadata": meta})
                                     move_success = True
                                 except Exception as e:
-                                    st.error(f"Phase 1 Failure: Report could not be moved to the folder. Error: {e}")
+                                    error_log = f"Move strictly locked by Salesforce. Error: {e}"
 
                             # PHASE 2: DECOUPLED RENAME & GUT
                             if move_success:
@@ -312,6 +313,8 @@ if 'sf' in st.session_state:
                                         st.warning(f"Banishment complete via Gut Engine. {target_id} moved and renamed.")
                                     except Exception as e:
                                         st.warning(f"Partial Banishment. {target_id} was successfully moved to the island folder, but structural corruption blocked the rename operation. It is contained.")
+                            else:
+                                st.error(f"Phase 1 Failure: Report could not be moved to the folder. {error_log}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
 
     # ==========================================
@@ -436,43 +439,71 @@ if 'sf' in st.session_state:
     # ==========================================
     with tab4:
         st.subheader("🪹 Empty Report Folder Radar")
-        st.markdown("Scan your org's Report Folders to identify empty directories taking up space and creating clutter. *Note: Zeros will automatically float to the top.*")
+        st.markdown("Scan your org's Report Folders to identify empty directories. Recursively counts all nested contents. *Note: Zeros will automatically float to the top.*")
         
         if st.button("Run Report Folder Audit", type="primary"):
-            with st.spinner("Mapping folders and crunching report counts..."):
+            with st.spinner("Mapping folders and calculating recursive rollups..."):
                 try:
-                    # 1. Grab all Report folders
-                    folders = sf.query_all("SELECT Id, Name, DeveloperName FROM Folder WHERE Type = 'Report'")['records']
+                    # 1. Grab all Report folders including ParentId
+                    folders = sf.query_all("SELECT Id, Name, DeveloperName, ParentId FROM Folder WHERE Type = 'Report'")['records']
                     
                     # 2. Grab all report IDs and their Folder IDs (OwnerId)
                     reports = sf.query_all("SELECT Id, OwnerId FROM Report")['records']
                     
-                    # Count occurrences using Pandas
                     df_reports = pd.DataFrame(reports)
-                    if not df_reports.empty:
-                        count_map = df_reports['OwnerId'].value_counts().to_dict()
-                    else:
-                        count_map = {}
+                    count_map = df_reports['OwnerId'].value_counts().to_dict() if not df_reports.empty else {}
 
-                    folder_data = []
+                    # 3. Build structural hierarchy
+                    folder_dict = {}
                     for f in folders:
-                        f_id = f['Id']
-                        count = count_map.get(f_id, 0)
-                        folder_data.append({
+                        folder_dict[f['Id']] = {
                             "Folder Name": f['Name'],
                             "Developer Name": f['DeveloperName'],
-                            "Report Count": count,
-                            "Folder Link": f"https://{base_url}/lightning/r/Folder/{f_id}/view"
+                            "ParentId": f.get('ParentId'),
+                            "Direct Count": count_map.get(f['Id'], 0),
+                            "Total Count": 0,
+                            "Children": [],
+                            "Folder Link": f"https://{base_url}/lightning/r/Folder/{f['Id']}/view"
+                        }
+
+                    # Link parent to children
+                    for f_id, data in folder_dict.items():
+                        p_id = data["ParentId"]
+                        if p_id and p_id in folder_dict:
+                            folder_dict[p_id]["Children"].append(f_id)
+
+                    # 4. Recursive Rollup Algorithm
+                    computed = set()
+                    def get_rollup(fid):
+                        if fid in computed:
+                            return folder_dict[fid]["Total Count"]
+                        total = folder_dict[fid]["Direct Count"]
+                        for cid in folder_dict[fid]["Children"]:
+                            total += get_rollup(cid)
+                        folder_dict[fid]["Total Count"] = total
+                        computed.add(fid)
+                        return total
+
+                    folder_data = []
+                    for f_id, data in folder_dict.items():
+                        get_rollup(f_id)
+                        folder_data.append({
+                            "Folder Name": data["Folder Name"],
+                            "Developer Name": data["Developer Name"],
+                            "Total Nested Reports": data["Total Count"],
+                            "Direct Reports": data["Direct Count"],
+                            "Subfolders": len(data["Children"]),
+                            "Folder Link": data["Folder Link"]
                         })
 
                     if not folder_data:
                         st.info("No custom report folders found in this org.")
                     else:
                         df_folders = pd.DataFrame(folder_data)
-                        df_folders = df_folders.sort_values(by="Report Count", ascending=True)
+                        df_folders = df_folders.sort_values(by="Total Nested Reports", ascending=True)
                         
-                        empty_count = len(df_folders[df_folders['Report Count'] == 0])
-                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty folders.")
+                        empty_count = len(df_folders[df_folders['Total Nested Reports'] == 0])
+                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty folders (including subfolders).")
 
                         col_config = {
                             "Folder Link": st.column_config.LinkColumn("Action", display_text="Open Folder ↗")
@@ -487,43 +518,71 @@ if 'sf' in st.session_state:
     # ==========================================
     with tab5:
         st.subheader("📊 Empty Dashboard Folder Radar")
-        st.markdown("Scan your org's Dashboard Folders to identify empty directories. *Note: Zeros will automatically float to the top.*")
+        st.markdown("Scan your org's Dashboard Folders to identify empty directories. Recursively counts all nested contents. *Note: Zeros will automatically float to the top.*")
         
         if st.button("Run Dashboard Folder Audit", type="primary"):
-            with st.spinner("Mapping dashboard folders and crunching counts..."):
+            with st.spinner("Mapping dashboard folders and calculating recursive rollups..."):
                 try:
-                    # 1. Grab all Dashboard folders
-                    folders = sf.query_all("SELECT Id, Name, DeveloperName FROM Folder WHERE Type = 'Dashboard'")['records']
+                    # 1. Grab all Dashboard folders including ParentId
+                    folders = sf.query_all("SELECT Id, Name, DeveloperName, ParentId FROM Folder WHERE Type = 'Dashboard'")['records']
                     
                     # 2. Grab all dashboard IDs and their Folder IDs
                     dashboards = sf.query_all("SELECT Id, FolderId FROM Dashboard")['records']
                     
-                    # Count occurrences using Pandas
                     df_dashboards = pd.DataFrame(dashboards)
-                    if not df_dashboards.empty:
-                        count_map = df_dashboards['FolderId'].value_counts().to_dict()
-                    else:
-                        count_map = {}
+                    count_map = df_dashboards['FolderId'].value_counts().to_dict() if not df_dashboards.empty else {}
 
-                    folder_data = []
+                    # 3. Build structural hierarchy
+                    folder_dict = {}
                     for f in folders:
-                        f_id = f['Id']
-                        count = count_map.get(f_id, 0)
-                        folder_data.append({
+                        folder_dict[f['Id']] = {
                             "Folder Name": f['Name'],
                             "Developer Name": f['DeveloperName'],
-                            "Dashboard Count": count,
-                            "Folder Link": f"https://{base_url}/lightning/r/Folder/{f_id}/view"
+                            "ParentId": f.get('ParentId'),
+                            "Direct Count": count_map.get(f['Id'], 0),
+                            "Total Count": 0,
+                            "Children": [],
+                            "Folder Link": f"https://{base_url}/lightning/r/Folder/{f['Id']}/view"
+                        }
+
+                    # Link parent to children
+                    for f_id, data in folder_dict.items():
+                        p_id = data["ParentId"]
+                        if p_id and p_id in folder_dict:
+                            folder_dict[p_id]["Children"].append(f_id)
+
+                    # 4. Recursive Rollup Algorithm
+                    computed = set()
+                    def get_rollup(fid):
+                        if fid in computed:
+                            return folder_dict[fid]["Total Count"]
+                        total = folder_dict[fid]["Direct Count"]
+                        for cid in folder_dict[fid]["Children"]:
+                            total += get_rollup(cid)
+                        folder_dict[fid]["Total Count"] = total
+                        computed.add(fid)
+                        return total
+
+                    folder_data = []
+                    for f_id, data in folder_dict.items():
+                        get_rollup(f_id)
+                        folder_data.append({
+                            "Folder Name": data["Folder Name"],
+                            "Developer Name": data["Developer Name"],
+                            "Total Nested Dashboards": data["Total Count"],
+                            "Direct Dashboards": data["Direct Count"],
+                            "Subfolders": len(data["Children"]),
+                            "Folder Link": data["Folder Link"]
                         })
 
                     if not folder_data:
                         st.info("No custom dashboard folders found in this org.")
                     else:
                         df_folders = pd.DataFrame(folder_data)
-                        df_folders = df_folders.sort_values(by="Dashboard Count", ascending=True)
+                        df_folders = df_folders.sort_values(by="Total Nested Dashboards", ascending=True)
                         
-                        empty_count = len(df_folders[df_folders['Dashboard Count'] == 0])
-                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty dashboard folders.")
+                        empty_count = len(df_folders[df_folders['Total Nested Dashboards'] == 0])
+                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty dashboard folders (including subfolders).")
 
                         col_config = {
                             "Folder Link": st.column_config.LinkColumn("Action", display_text="Open Folder ↗")
