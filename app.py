@@ -7,14 +7,14 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V19")
+st.title("🧨 The Ruthless Report Liberator V20")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Brute-Force Mimic Engine.")
 
 # --- BRUTE-FORCE MIMIC ENGINE ---
 def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_name):
     """
     Converts the payload to a string to guarantee eradication of corrupt division data,
-    then executes a synchronized purge of BucketFields to prevent reference paradoxes.
+    then executes a synchronized purge of BucketFields and Formulas to prevent reference paradoxes.
     """
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
@@ -26,9 +26,12 @@ def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_na
     meta_str = meta_str.replace("Granger", "Baldwin")
     meta = json.loads(meta_str)
     
-    # 2. Synchronized BucketField Purge
+    # 2. Synchronized BucketField & Formula Purge
     # You cannot delete a bucket definition without deleting its references.
+    # You also must delete formulas that group by those deleted buckets.
     meta["buckets"] = []
+    meta["customSummaryFormulas"] = []
+    meta["customDetailFormulas"] = []
     
     if isinstance(meta.get("detailColumns"), list):
         meta["detailColumns"] = [c for c in meta["detailColumns"] if "BucketField" not in str(c)]
@@ -225,8 +228,8 @@ if 'sf' in st.session_state:
                             sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                             st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                         except Exception:
-                            raw_report = sf.restful(f"analytics/reports/{target_id}")
-                            existing_name = raw_report.get("reportMetadata", {}).get("name", "DEAD REPORT")
+                            # Use consistent naming for the single execution block as well
+                            existing_name = f"DEAD REPORT - TRASH - {target_id}"[:40]
                             execute_bruteforce_mimic(sf, target_id, org_id, existing_name)
                             st.success("Trojan Horse successful via Brute-Force Mimic. Corruption eradicated to force move.")
                     except Exception as e: 
@@ -251,7 +254,7 @@ if 'sf' in st.session_state:
                         if not folder_records: st.error("Could not find folder API Name 'ZZZDONOTUSETRASH'.")
                         else:
                             trash_folder_id = folder_records[0]['Id']
-                            new_name = f"DEAD REPORT - {target_id}"[:40] 
+                            new_name = f"DEAD REPORT - TRASH - {target_id}"[:40] 
                             
                             try:
                                 payload = {"reportMetadata": {"folderId": trash_folder_id, "name": new_name}}
@@ -260,7 +263,7 @@ if 'sf' in st.session_state:
                             except Exception:
                                 try:
                                     execute_bruteforce_mimic(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Brute-Force Mimic Engine. Validation walls bypassed.")
+                                    st.warning(f"Banishment complete via Brute-Force Mimic Engine. Synchronized purge bypassed validation.")
                                 except Exception as e:
                                     st.error(f"Total Quarantine Failure. Report could not be moved: {e}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
@@ -335,7 +338,8 @@ if 'sf' in st.session_state:
                             
                             for i, r_id in enumerate(unique_ids):
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
-                                new_name = f"DEAD REPORT - {r_id}"[:40]
+                                # Fixed 40 character strict alignment for naming
+                                new_name = f"DEAD REPORT - TRASH - {r_id}"[:40]
                                 
                                 try:
                                     payload = {"reportMetadata": {"name": new_name, "folderId": trash_folder_id}}
