@@ -7,58 +7,67 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V22")
+st.title("🧨 The Ruthless Report Liberator V23")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Brute-Force Mimic Engine.")
 
 # --- BRUTE-FORCE MIMIC ENGINE ---
 def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_name):
     """
-    Converts the payload to a string to guarantee eradication of corrupt division data,
-    then unconditionally zeroes out formulas to prevent dependency paradoxes.
+    Converts the payload to a string to execute a global Infection Swap.
+    Replaces corrupt Buckets with a safe host column and neutralizes formula math.
     """
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
     
-    # 1. Convert to raw string for global search-and-replace (The Division Fix)
+    # 1. Eradicate Division Errors Globally
     meta_str = json.dumps(meta)
     meta_str = meta_str.replace("Granger, IA", "Baldwin")
     meta_str = meta_str.replace("Granger%2C IA", "Baldwin")
     meta_str = meta_str.replace("Granger", "Baldwin")
+    
+    # 2. Extract Ghost Buckets
+    bucket_fields = set(re.findall(r'BucketField_[a-zA-Z0-9_]+', meta_str))
+    
+    if bucket_fields:
+        meta_temp = json.loads(meta_str)
+        # 3. Identify a Safe Host Column
+        safe_col = "Id" # Ultimate fallback
+        if meta_temp.get("detailColumns"):
+            for col in meta_temp["detailColumns"]:
+                # Find the first safe, non-date string column to avoid dateGranularity errors
+                if "Date" not in col and "DATE" not in col and "BucketField" not in col:
+                    safe_col = col
+                    break
+        
+        # 4. Execute Global Infection Swap
+        for bf in bucket_fields:
+            meta_str = meta_str.replace(bf, safe_col)
+            
     meta = json.loads(meta_str)
     
-    # 2. Unconditional Formula & Bucket Wipe
-    # We do not conditionally parse these. If they exist, they are wiped to zero. 
-    # This prevents abstract grouping references from crashing the compiler.
+    # 5. Clear the now-renamed Bucket Definitions to prevent schema errors
     if "buckets" in meta:
         meta["buckets"] = []
         
+    # 6. Neutralize Formula Math (prevents calculation paradoxes on the new host column)
     if "customSummaryFormulas" in meta:
-        meta["customSummaryFormulas"] = []
-        
-    if "customDetailFormulas" in meta:
-        meta["customDetailFormulas"] = []
-        
-    # 3. Aggressive Dependency Scrub
-    # Strip out any column, sort, or grouping that references a bucket OR a formula
-    list_keys_to_scrub = ["detailColumns", "groupingsDown", "groupingsAcross", "sortBy", "aggregates"]
-    for key in list_keys_to_scrub:
-        if key in meta and isinstance(meta[key], list):
-            meta[key] = [
-                item for item in meta[key] 
-                if "BucketField" not in str(item) and "FORMULA" not in str(item)
-            ]
+        for f in meta["customSummaryFormulas"]:
+            f["formula"] = "RowCount"
             
-    # 4. Prevent Chart Axis Errors
-    # If a chart relies on a bucket or formula we just deleted, the API will reject the save.
+    if "customDetailFormulas" in meta:
+        for f in meta["customDetailFormulas"]:
+            f["formula"] = "1"
+            
+    # 7. Strip Charts (prevents axis referencing errors)
     meta.pop("reportChart", None)
     meta.pop("chart", None)
     meta.pop("hasChart", None)
             
-    # 5. Update the quarantine targets
+    # 8. Update the quarantine targets
     meta["folderId"] = target_folder_id
     meta["name"] = target_name
         
-    # 6. Push the healed schema back to the server
+    # 9. Push the healed schema back to the server
     sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
@@ -234,6 +243,7 @@ if 'sf' in st.session_state:
                             sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                             st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                         except Exception:
+                            # Use strict 40 character naming alignment
                             existing_name = f"DEAD REPORT - TRASH - {target_id}"[:40]
                             execute_bruteforce_mimic(sf, target_id, org_id, existing_name)
                             st.success("Trojan Horse successful via Brute-Force Mimic. Corruption eradicated to force move.")
@@ -268,7 +278,7 @@ if 'sf' in st.session_state:
                             except Exception:
                                 try:
                                     execute_bruteforce_mimic(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Brute-Force Mimic Engine. Synchronized purge bypassed validation.")
+                                    st.warning(f"Banishment complete via Brute-Force Mimic Engine. Global infection swap forced action.")
                                 except Exception as e:
                                     st.error(f"Total Quarantine Failure. Report could not be moved: {e}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
@@ -318,7 +328,7 @@ if 'sf' in st.session_state:
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
         2. Attempt standard Analytics API move and rename.
-        3. If blocked by validation errors, the **Brute-Force Mimic Engine** will globally replace corrupt values and safely purge BucketFields to guarantee completion.
+        3. If blocked by validation errors, the **Brute-Force Mimic Engine** will globally swap corrupt Buckets with safe host columns to guarantee completion.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -343,6 +353,7 @@ if 'sf' in st.session_state:
                             
                             for i, r_id in enumerate(unique_ids):
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
+                                # Strict 40 character lock to fix the naming inconsistencies
                                 new_name = f"DEAD REPORT - TRASH - {r_id}"[:40]
                                 
                                 try:
@@ -352,7 +363,7 @@ if 'sf' in st.session_state:
                                 except Exception:
                                     try:
                                         execute_bruteforce_mimic(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Synchronized conditional purge forced action."})
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Global Infection Swap forced action."})
                                     except Exception as repair_err:
                                         results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(repair_err)})
                                 
