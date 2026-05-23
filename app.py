@@ -7,14 +7,15 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V23")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Brute-Force Mimic Engine.")
+st.title("🧨 The Ruthless Report Liberator V24")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via In-Place Neutralization.")
 
-# --- BRUTE-FORCE MIMIC ENGINE ---
-def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_name):
+# --- IN-PLACE NEUTRALIZATION ENGINE ---
+def execute_inplace_neutralization(sf_instance, report_id, target_folder_id, target_name):
     """
-    Converts the payload to a string to execute a global Infection Swap.
-    Replaces corrupt Buckets with a safe host column and neutralizes formula math.
+    Converts the payload to a string to eradicate division errors, then executes an 
+    in-place neutralization of Buckets and Formulas to overwrite backend corruption 
+    without triggering PATCH merge paradoxes.
     """
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
@@ -24,50 +25,44 @@ def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_na
     meta_str = meta_str.replace("Granger, IA", "Baldwin")
     meta_str = meta_str.replace("Granger%2C IA", "Baldwin")
     meta_str = meta_str.replace("Granger", "Baldwin")
-    
-    # 2. Extract Ghost Buckets
-    bucket_fields = set(re.findall(r'BucketField_[a-zA-Z0-9_]+', meta_str))
-    
-    if bucket_fields:
-        meta_temp = json.loads(meta_str)
-        # 3. Identify a Safe Host Column
-        safe_col = "Id" # Ultimate fallback
-        if meta_temp.get("detailColumns"):
-            for col in meta_temp["detailColumns"]:
-                # Find the first safe, non-date string column to avoid dateGranularity errors
-                if "Date" not in col and "DATE" not in col and "BucketField" not in col:
-                    safe_col = col
-                    break
-        
-        # 4. Execute Global Infection Swap
-        for bf in bucket_fields:
-            meta_str = meta_str.replace(bf, safe_col)
-            
     meta = json.loads(meta_str)
     
-    # 5. Clear the now-renamed Bucket Definitions to prevent schema errors
+    # 2. Identify a Safe Host Column dynamically
+    safe_col = "Id"
+    if meta.get("detailColumns"):
+        for col in meta["detailColumns"]:
+            if "BucketField" not in col and "FORMULA" not in col:
+                safe_col = col
+                break
+                
+    # 3. In-Place Bucket Neutralization
+    # Keep the developerName intact so the server overwrites the broken backend definition.
     if "buckets" in meta:
-        meta["buckets"] = []
-        
-    # 6. Neutralize Formula Math (prevents calculation paradoxes on the new host column)
+        for bucket in meta["buckets"]:
+            bucket["sourceColumnName"] = safe_col
+            if "values" in bucket:
+                bucket["values"] = []
+                
+    # 4. In-Place Formula Neutralization
+    # Keep the grouping dependencies intact but neutralize the math to prevent calculation errors.
     if "customSummaryFormulas" in meta:
-        for f in meta["customSummaryFormulas"]:
-            f["formula"] = "RowCount"
+        for formula in meta["customSummaryFormulas"]:
+            formula["formula"] = "RowCount"
             
     if "customDetailFormulas" in meta:
-        for f in meta["customDetailFormulas"]:
-            f["formula"] = "1"
+        for formula in meta["customDetailFormulas"]:
+            formula["formula"] = "1"
             
-    # 7. Strip Charts (prevents axis referencing errors)
+    # 5. Strip Charts to prevent axis referencing errors on neutralized data
     meta.pop("reportChart", None)
     meta.pop("chart", None)
     meta.pop("hasChart", None)
             
-    # 8. Update the quarantine targets
+    # 6. Update the quarantine targets
     meta["folderId"] = target_folder_id
     meta["name"] = target_name
         
-    # 9. Push the healed schema back to the server
+    # 7. Push the healed schema back to the server
     sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
@@ -243,10 +238,9 @@ if 'sf' in st.session_state:
                             sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                             st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                         except Exception:
-                            # Use strict 40 character naming alignment
                             existing_name = f"DEAD REPORT - TRASH - {target_id}"[:40]
-                            execute_bruteforce_mimic(sf, target_id, org_id, existing_name)
-                            st.success("Trojan Horse successful via Brute-Force Mimic. Corruption eradicated to force move.")
+                            execute_inplace_neutralization(sf, target_id, org_id, existing_name)
+                            st.success("Trojan Horse successful via In-Place Neutralization. Corruption overwritten to force move.")
                     except Exception as e: 
                         st.error(f"Total failure on Trojan Horse move. Error: {e}")
 
@@ -277,8 +271,8 @@ if 'sf' in st.session_state:
                                 st.success(f"Banishment complete. {target_id} has been exiled and renamed.")
                             except Exception:
                                 try:
-                                    execute_bruteforce_mimic(sf, target_id, trash_folder_id, new_name)
-                                    st.warning(f"Banishment complete via Brute-Force Mimic Engine. Global infection swap forced action.")
+                                    execute_inplace_neutralization(sf, target_id, trash_folder_id, new_name)
+                                    st.warning(f"Banishment complete via In-Place Neutralization Engine. Corrupt backend definitions were overwritten.")
                                 except Exception as e:
                                     st.error(f"Total Quarantine Failure. Report could not be moved: {e}")
                     except Exception as e: st.error(f"Failed to query target folder. Error: {e}")
@@ -328,7 +322,7 @@ if 'sf' in st.session_state:
         Paste a list of raw Report IDs below. The engine will:
         1. Extract the valid `00O...` IDs.
         2. Attempt standard Analytics API move and rename.
-        3. If blocked by validation errors, the **Brute-Force Mimic Engine** will globally swap corrupt Buckets with safe host columns to guarantee completion.
+        3. If blocked by validation errors, the **In-Place Neutralization Engine** will universally overwrite corrupt Bucket and Formula data to guarantee completion.
         """)
         
         bulk_ids_input = st.text_area("Paste Report IDs (comma separated, newlines, or a raw list):", height=200)
@@ -353,7 +347,6 @@ if 'sf' in st.session_state:
                             
                             for i, r_id in enumerate(unique_ids):
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
-                                # Strict 40 character lock to fix the naming inconsistencies
                                 new_name = f"DEAD REPORT - TRASH - {r_id}"[:40]
                                 
                                 try:
@@ -362,8 +355,8 @@ if 'sf' in st.session_state:
                                     results.append({"Report ID": r_id, "Status": "✅ Banished & Renamed", "Error": ""})
                                 except Exception:
                                     try:
-                                        execute_bruteforce_mimic(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Global Infection Swap forced action."})
+                                        execute_inplace_neutralization(sf, r_id, trash_folder_id, new_name)
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "In-Place Neutralization forced action."})
                                     except Exception as repair_err:
                                         results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(repair_err)})
                                 
