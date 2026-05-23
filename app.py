@@ -7,8 +7,8 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V28")
-st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via Atomic Decoupling.")
+st.title("🧨 The Ruthless Report Liberator V29")
+st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, mass-quarantine legacy garbage, and sweep up empty folders.")
 
 # === HARDCODED KILL LIST ===
 DEAD_DIVISIONS = [
@@ -96,7 +96,7 @@ if 'sf' in st.session_state:
     sf = st.session_state['sf']
     base_url = sf.sf_instance
     
-    tab1, tab2, tab3 = st.tabs(["🎯 Single Target Hunter", "📁 Folder ID Harvester", "🗑️ Mass Quarantine Island"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🎯 Single Target Hunter", "📁 Folder ID Harvester", "🗑️ Mass Quarantine Island", "🪹 Empty Folder Radar"])
     
     # ==========================================
     # TAB 1: SINGLE TARGET HUNTER
@@ -322,7 +322,7 @@ if 'sf' in st.session_state:
         if 'cached_folders' not in st.session_state:
             with st.spinner("Mapping org folders..."):
                 try:
-                    folder_res = sf.query("SELECT Id, Name, DeveloperName FROM Folder WHERE Type = 'Report' ORDER BY Name ASC")['records']
+                    folder_res = sf.query_all("SELECT Id, Name, DeveloperName FROM Folder WHERE Type = 'Report' ORDER BY Name ASC")['records']
                     folder_options = [{"label": f"📦 {f['Name']} ({f['DeveloperName']})", "id": f['Id']} for f in folder_res]
                     st.session_state['cached_folders'] = folder_options
                 except Exception as e:
@@ -339,7 +339,7 @@ if 'sf' in st.session_state:
             if st.button("Harvest Report IDs", type="primary"):
                 with st.spinner("Harvesting records..."):
                     try:
-                        reports_in_folder = sf.query(f"SELECT Id, Name FROM Report WHERE OwnerId = '{selected_folder_id}' ORDER BY Name ASC")['records']
+                        reports_in_folder = sf.query_all(f"SELECT Id, Name FROM Report WHERE OwnerId = '{selected_folder_id}' ORDER BY Name ASC")['records']
                         if not reports_in_folder: st.warning("This folder is empty or contains no queryable custom reports.")
                         else:
                             st.success(f"Successfully harvested {len(reports_in_folder)} report(s) from this folder!")
@@ -430,3 +430,58 @@ if 'sf' in st.session_state:
                         st.error(f"System error during bulk operation: {e}")
             else:
                 st.warning("Please paste some IDs first.")
+
+    # ==========================================
+    # TAB 4: EMPTY FOLDER RADAR
+    # ==========================================
+    with tab4:
+        st.subheader("🪹 Empty Folder Radar")
+        st.markdown("Scan your org's Report Folders to identify empty directories taking up space and creating clutter. *Note: Zeros will automatically float to the top.*")
+        
+        if st.button("Run Folder Audit", type="primary"):
+            with st.spinner("Mapping folders and crunching report counts..."):
+                try:
+                    # 1. Grab all Report folders
+                    folders = sf.query_all("SELECT Id, Name, DeveloperName FROM Folder WHERE Type = 'Report'")['records']
+                    
+                    # 2. Grab all report IDs and their Folder IDs (OwnerId)
+                    # We use simple query_all + pandas to avoid hitting Salesforce aggregate query limits on massive orgs
+                    reports = sf.query_all("SELECT Id, OwnerId FROM Report")['records']
+                    
+                    # Count occurrences using Pandas
+                    df_reports = pd.DataFrame(reports)
+                    if not df_reports.empty:
+                        count_map = df_reports['OwnerId'].value_counts().to_dict()
+                    else:
+                        count_map = {}
+
+                    folder_data = []
+                    for f in folders:
+                        f_id = f['Id']
+                        # Match the OwnerId to the Folder Id. If it's not in the map, it has 0 reports.
+                        count = count_map.get(f_id, 0)
+                        folder_data.append({
+                            "Folder Name": f['Name'],
+                            "Developer Name": f['DeveloperName'],
+                            "Report Count": count,
+                            "Folder Link": f"https://{base_url}/lightning/r/Folder/{f_id}/view"
+                        })
+
+                    if not folder_data:
+                        st.info("No custom report folders found in this org.")
+                    else:
+                        df_folders = pd.DataFrame(folder_data)
+                        
+                        # Sort to force the 0s to the top
+                        df_folders = df_folders.sort_values(by="Report Count", ascending=True)
+                        
+                        empty_count = len(df_folders[df_folders['Report Count'] == 0])
+                        st.success(f"Audit Complete! Scanned {len(folders)} total folders. Found {empty_count} completely empty folders.")
+
+                        col_config = {
+                            "Folder Link": st.column_config.LinkColumn("Action", display_text="Open Folder ↗")
+                        }
+                        st.dataframe(df_folders, use_container_width=True, hide_index=True, column_config=col_config)
+
+                except Exception as e:
+                    st.error(f"Failed to scan folders. Error: {e}")
