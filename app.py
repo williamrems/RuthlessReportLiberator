@@ -7,14 +7,14 @@ from simple_salesforce import Salesforce
 
 st.set_page_config(page_title="Ruthless Report Liberator", page_icon="🧨", layout="wide")
 
-st.title("🧨 The Ruthless Report Liberator V20")
+st.title("🧨 The Ruthless Report Liberator V21")
 st.markdown("X-Ray the org for dependencies, extract entire folders of IDs, or mass-quarantine legacy garbage via the Brute-Force Mimic Engine.")
 
 # --- BRUTE-FORCE MIMIC ENGINE ---
 def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_name):
     """
     Converts the payload to a string to guarantee eradication of corrupt division data,
-    then executes a synchronized purge of BucketFields and Formulas to prevent reference paradoxes.
+    then executes a conditionally synchronized purge of BucketFields to prevent parser paradoxes.
     """
     raw_report = sf_instance.restful(f"analytics/reports/{report_id}")
     meta = raw_report.get("reportMetadata", {})
@@ -26,33 +26,33 @@ def execute_bruteforce_mimic(sf_instance, report_id, target_folder_id, target_na
     meta_str = meta_str.replace("Granger", "Baldwin")
     meta = json.loads(meta_str)
     
-    # 2. Synchronized BucketField & Formula Purge
-    # You cannot delete a bucket definition without deleting its references.
-    # You also must delete formulas that group by those deleted buckets.
-    meta["buckets"] = []
-    meta["customSummaryFormulas"] = []
-    meta["customDetailFormulas"] = []
-    
-    if isinstance(meta.get("detailColumns"), list):
-        meta["detailColumns"] = [c for c in meta["detailColumns"] if "BucketField" not in str(c)]
+    # 2. Conditionally Synchronized Purge
+    # Only modify keys if they already exist to avoid JSON_PARSER_ERRORs from unexpected properties.
+    if "buckets" in meta:
+        meta["buckets"] = []
         
-    if isinstance(meta.get("groupingsDown"), list):
-        meta["groupingsDown"] = [g for g in meta["groupingsDown"] if isinstance(g, dict) and "BucketField" not in str(g.get("name", ""))]
+    if "customSummaryFormulas" in meta:
+        meta["customSummaryFormulas"] = [f for f in meta["customSummaryFormulas"] if "BucketField" not in str(f)]
         
-    if isinstance(meta.get("groupingsAcross"), list):
-        meta["groupingsAcross"] = [g for g in meta["groupingsAcross"] if isinstance(g, dict) and "BucketField" not in str(g.get("name", ""))]
+    if "customDetailFormulas" in meta:
+        meta["customDetailFormulas"] = [f for f in meta["customDetailFormulas"] if "BucketField" not in str(f)]
         
-    if isinstance(meta.get("sortBy"), list):
-        meta["sortBy"] = [s for s in meta["sortBy"] if isinstance(s, dict) and "BucketField" not in str(s.get("sortColumn", ""))]
-        
-    if isinstance(meta.get("aggregates"), list):
-        meta["aggregates"] = [a for a in meta["aggregates"] if "BucketField" not in str(a)]
+    list_keys_to_scrub = ["detailColumns", "groupingsDown", "groupingsAcross", "sortBy", "aggregates"]
+    for key in list_keys_to_scrub:
+        if key in meta and isinstance(meta[key], list):
+            meta[key] = [item for item in meta[key] if "BucketField" not in str(item)]
             
-    # 3. Update the quarantine targets
+    # 3. Prevent Chart Axis Errors
+    # If a chart relies on a bucket we just deleted, the API will reject the save.
+    meta.pop("reportChart", None)
+    meta.pop("chart", None)
+    meta.pop("hasChart", None)
+            
+    # 4. Update the quarantine targets
     meta["folderId"] = target_folder_id
     meta["name"] = target_name
         
-    # 4. Push the healed schema back to the server
+    # 5. Push the healed schema back to the server
     sf_instance.restful(f"analytics/reports/{report_id}", method="PATCH", json={"reportMetadata": meta})
 
 # --- SIDEBAR: AUTHENTICATION ---
@@ -228,7 +228,6 @@ if 'sf' in st.session_state:
                             sf.restful(f"analytics/reports/{target_id}", method="PATCH", json=payload)
                             st.success("Trojan Horse successful! Report moved to Unfiled Public Reports. Now click Hard Delete.")
                         except Exception:
-                            # Use consistent naming for the single execution block as well
                             existing_name = f"DEAD REPORT - TRASH - {target_id}"[:40]
                             execute_bruteforce_mimic(sf, target_id, org_id, existing_name)
                             st.success("Trojan Horse successful via Brute-Force Mimic. Corruption eradicated to force move.")
@@ -338,7 +337,6 @@ if 'sf' in st.session_state:
                             
                             for i, r_id in enumerate(unique_ids):
                                 status_text.text(f"Quarantining {i+1} of {len(unique_ids)}: {r_id}...")
-                                # Fixed 40 character strict alignment for naming
                                 new_name = f"DEAD REPORT - TRASH - {r_id}"[:40]
                                 
                                 try:
@@ -348,7 +346,7 @@ if 'sf' in st.session_state:
                                 except Exception:
                                     try:
                                         execute_bruteforce_mimic(sf, r_id, trash_folder_id, new_name)
-                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Synchronized purge forced action."})
+                                        results.append({"Report ID": r_id, "Status": "⚠️ Repaired & Banished", "Error": "Synchronized conditional purge forced action."})
                                     except Exception as repair_err:
                                         results.append({"Report ID": r_id, "Status": "❌ Total Failure", "Error": str(repair_err)})
                                 
